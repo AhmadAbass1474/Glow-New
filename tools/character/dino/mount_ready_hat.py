@@ -96,13 +96,16 @@ def _green_mask_rgb(arr: np.ndarray) -> np.ndarray:
 def _blackout_green(jpeg: bytes) -> bytes:
     """Repaint baked green accents to charcoal so the hat stays fully dark."""
     im = Image.open(io.BytesIO(jpeg)).convert('RGB')
+    # 4K atlases crush mobile cold-start; 1024 is enough for the felt hat.
+    if max(im.size) > 1024:
+        im.thumbnail((1024, 1024), Image.Resampling.LANCZOS)
     arr = np.asarray(im).copy()
     mask = _green_mask_rgb(arr)
     # Match studio default hat charcoal (#2C2C2E).
     arr[mask] = (44, 44, 46)
     out = io.BytesIO()
-    Image.fromarray(arr).save(out, format='JPEG', quality=92)
-    print('blacked-out green texels', int(mask.sum()))
+    Image.fromarray(arr).save(out, format='JPEG', quality=78, optimize=True)
+    print('blacked-out green texels', int(mask.sum()), 'size', im.size)
     return out.getvalue()
 
 

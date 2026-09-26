@@ -1,9 +1,11 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 import '../utils/character_helper.dart';
+import 'character_offline_pack.dart';
 
-/// Only immutable file bytes are shared. Each viewer owns its GPU resources,
-/// materials and skeleton so closing one route cannot invalidate another.
+/// Shared immutable asset bytes for native/web three_js viewers.
+/// Mobile WebView uses [CharacterOfflinePack] instead of these bytes.
 class CharacterAssetCache {
   CharacterAssetCache({AssetBundle? bundle}) : _bundle = bundle ?? rootBundle;
 
@@ -21,19 +23,23 @@ class CharacterAssetCache {
 
   Future<Uint8List> _read(String path) async {
     try {
-      final data = await Future<ByteData>.sync(() => _bundle.load(path));
+      final data = await _bundle.load(path);
       return data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
     } catch (_) {
-      _assets.remove(path); // A transient failure must not poison later visits.
+      _assets.remove(path);
       rethrow;
     }
   }
 
+  /// Prefetch shared model bytes (web/desktop) and stage the mobile disk pack.
   Future<void> prewarm() async {
     try {
-      await load(CharacterHelper.sharedModelPath);
+      await Future.wait([
+        load(CharacterHelper.sharedModelPath),
+        if (!kIsWeb) CharacterOfflinePack.instance.prewarm(),
+      ]);
     } catch (_) {
-      // The visible viewer owns error reporting and can retry the asset load.
+      // Visible viewers own retry/error UI.
     }
   }
 }

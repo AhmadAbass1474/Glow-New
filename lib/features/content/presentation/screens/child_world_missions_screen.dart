@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -12,6 +14,7 @@ import '../bloc/content_state.dart';
 import '../../../auth/data/datasources/auth_local_data_source.dart';
 import '../../domain/repositories/content_repository.dart';
 import '../../../../core/widgets/shimmer_loading.dart';
+import '../../../../core/services/character_asset_cache.dart';
 
 class ChildWorldMissionsScreen extends StatefulWidget {
   final WorldEntity world;
@@ -33,6 +36,8 @@ class _ChildWorldMissionsScreenState extends State<ChildWorldMissionsScreen> {
     _contentBloc = sl<ContentBloc>();
     _contentBloc.add(ContentEvent.getMissions(widget.world.id));
     _fetchProgress();
+    // Warm the shared mascot before the child opens a story.
+    unawaited(CharacterAssetCache.instance.prewarm());
   }
 
   Future<void> _fetchProgress() async {

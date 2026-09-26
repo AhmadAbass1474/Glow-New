@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:Glow/core/network/network_info.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -17,6 +19,7 @@ import '../../../content/data/services/sync_service.dart';
 import '../../../content/domain/repositories/content_repository.dart';
 import '../../../../core/utils/logout_helper.dart';
 import '../../../../core/widgets/custom_loader.dart';
+import '../../../../core/services/character_asset_cache.dart';
 
 class ChildDashboardScreen extends StatefulWidget {
   const ChildDashboardScreen({super.key});
@@ -44,6 +47,7 @@ class _ChildDashboardScreenState extends State<ChildDashboardScreen> {
     _contentBloc = sl<ContentBloc>();
     _syncService = sl<SyncService>();
     _initChildAndSync();
+    unawaited(CharacterAssetCache.instance.prewarm());
   }
 
   Future<void> _initChildAndSync() async {

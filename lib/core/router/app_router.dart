@@ -59,25 +59,6 @@ class AppRouter {
         ),
       ),
       GoRoute(
-        path: '/child/world-missions',
-        pageBuilder: (context, state) {
-          final world = state.extra as WorldEntity;
-          return CustomTransitionPage(
-            child: ChildWorldMissionsScreen(world: world),
-            transitionsBuilder: (context, animation, secondaryAnimation, child) {
-              return SlideTransition(
-                position: Tween<Offset>(
-                  begin: const Offset(1, 0),
-                  end: Offset.zero,
-                ).animate(animation),
-                child: child,
-              );
-            },
-            transitionDuration: const Duration(milliseconds: 200),
-          );
-        },
-      ),
-      GoRoute(
         path: '/child/story-viewer',
         pageBuilder: (context, state) {
           final mission = state.extra as MissionEntity;
@@ -86,7 +67,25 @@ class AppRouter {
             transitionsBuilder: (context, animation, secondaryAnimation, child) {
               return FadeTransition(opacity: animation, child: child);
             },
-            transitionDuration: const Duration(milliseconds: 150),
+            transitionDuration: const Duration(milliseconds: 90),
+            reverseTransitionDuration: const Duration(milliseconds: 80),
+          );
+        },
+      ),
+      GoRoute(
+        path: '/child/world-missions',
+        pageBuilder: (context, state) {
+          final world = state.extra as WorldEntity;
+          return CustomTransitionPage(
+            child: ChildWorldMissionsScreen(world: world),
+            transitionsBuilder: (context, animation, secondaryAnimation, child) {
+              return FadeTransition(
+                opacity: CurvedAnimation(parent: animation, curve: Curves.easeOut),
+                child: child,
+              );
+            },
+            transitionDuration: const Duration(milliseconds: 120),
+            reverseTransitionDuration: const Duration(milliseconds: 90),
           );
         },
       ),

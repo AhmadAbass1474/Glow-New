@@ -5,16 +5,20 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:webview_flutter/webview_flutter.dart';
+import 'package:webview_flutter_android/webview_flutter_android.dart';
 
 import '../animation/story_motion.dart';
 import '../di/injection_container.dart';
 import '../services/character_asset_cache.dart';
+import '../services/character_offline_pack.dart';
 import '../services/resource_manager.dart';
 import '../utils/character_helper.dart';
 
-/// WKWebView / Android WebView hosts the packaged Three.js runtime. The model
-/// enters as bounded binary chunks; no local HTTP server, CDN or network access
-/// is needed, including on a fresh install in airplane mode.
+/// Offline WebView character viewer.
+///
+/// - **Android:** shell from Flutter assets; GLB injected from memory/disk
+///   (Android blocks file→file XHR).
+/// - **iOS:** staged on-disk pack + direct local GLB load.
 class MobileCharacterViewer extends StatefulWidget {
   const MobileCharacterViewer({
     super.key,
@@ -24,7 +28,7 @@ class MobileCharacterViewer extends StatefulWidget {
     required this.isSpeaking,
     required this.interactive,
     required this.showSkeleton,
-    this.showHat = true,
+    this.showHat = false,
     this.hatColor = const Color(0xFF2C2C2E),
     this.motion,
     this.playbackPosition,
@@ -51,11 +55,15 @@ class _MobileCharacterViewerState extends State<MobileCharacterViewer>
   bool _ready = false, _booted = false, _foreground = true, _ticker = true;
   bool _visible = true, _sending = false;
   String? _error, _lastMessage, _queuedMessage;
+  Future<Uint8List>? _modelBytesFuture;
+  String? _iosModelFileName;
   int _generation = 0;
   Duration _lastPosition = Duration.zero;
   final _clock = Stopwatch(), _startup = Stopwatch();
   final _playbackClock = Stopwatch();
   int _lastPositionSent = -1000;
+
+  bool get _isAndroid => defaultTargetPlatform == TargetPlatform.android;
 
   @override
   void initState() {
@@ -65,6 +73,8 @@ class _MobileCharacterViewerState extends State<MobileCharacterViewer>
     widget.playbackPosition?.addListener(_positionChanged);
     _clock.start();
     if (widget.isPlaying) _playbackClock.start();
+    // Overlap model byte read with WebView boot to cut time-to-first-frame.
+    _modelBytesFuture = _resolveModelBytes();
     unawaited(_initialize());
     _visibilityTimer = Timer.periodic(
       const Duration(milliseconds: 250),
@@ -79,71 +89,59 @@ class _MobileCharacterViewerState extends State<MobileCharacterViewer>
       ..start();
     _booted = _ready = false;
     _lastMessage = _queuedMessage = null;
+    _iosModelFileName = null;
     try {
-      final controller = WebViewController();
-      _controller = controller;
-      await controller.setJavaScriptMode(JavaScriptMode.unrestricted);
-      await controller.setBackgroundColor(const Color(0xFFF4F7F5));
-      await controller.addJavaScriptChannel(
-        'GlowCharacter',
-        onMessageReceived: (message) {
-          if (!mounted || generation != _generation) return;
-          final payload = jsonDecode(message.message) as Map<String, dynamic>;
-          switch (payload['type']) {
-            case 'boot':
-              if (_booted) return;
-              _booted = true;
-              unawaited(_loadModel(controller, generation));
-            case 'ready':
-              if (_error != null) return;
-              _timeout?.cancel();
-              _startup.stop();
-              if (kDebugMode)
-                debugPrint(
-                  'Character mobile ready: ${_startup.elapsedMilliseconds}ms; ${payload['triangles']} triangles; ${payload['clips']}',
-                );
-              setState(() => _ready = true);
-              widget.onReady?.call();
-            case 'loaded':
-              _timeout?.cancel();
-            case 'error':
-              _fail(
-                payload['message'] ?? 'WebGL initialization failed',
-                generation,
-              );
-            case 'sample':
-              if (kDebugMode) debugPrint('Character mobile sample: $payload');
-          }
-        },
-      );
-      await controller.setNavigationDelegate(
-        NavigationDelegate(
-          onNavigationRequest: (request) => request.url.startsWith('file:')
-              ? NavigationDecision.navigate
-              : NavigationDecision.prevent,
-          onWebResourceError: (error) {
-            if (error.isForMainFrame == true)
-              _fail(error.description, generation);
-          },
-        ),
-      );
+      if (_isAndroid) {
+        await _bootWebView(
+          generation,
+          () => _controller!.loadFlutterAsset(CharacterOfflinePack.htmlAsset),
+        );
+        return;
+      }
+
+      final pack = CharacterOfflinePack.instance;
+      final dir = await pack.ensureReady();
       if (!mounted || generation != _generation) return;
-      setState(() {});
-      _timeout?.cancel();
-      _timeout = Timer(
-        const Duration(seconds: 45),
-        () => _fail('Character initialization timed out', generation),
+      final source = CharacterHelper.getModelPath(widget.characterName);
+      if (_isRemoteOrFileSource(source)) {
+        _iosModelFileName = await pack.stageOverrideFile(
+          await _resolveCustomModelPath(source),
+        );
+      } else {
+        _iosModelFileName = CharacterOfflinePack.modelFileName;
+      }
+      await _bootWebView(
+        generation,
+        () => _controller!.loadFile(pack.htmlFile(dir).path),
       );
-      await controller.loadFlutterAsset('assets/3d/character_mobile.html');
     } catch (error) {
       _fail(error, generation);
     }
   }
 
-  Future<Uint8List> _modelBytes() async {
+  bool _isRemoteOrFileSource(String source) {
+    final uri = Uri.tryParse(source);
+    return uri?.scheme == 'file' ||
+        uri?.scheme == 'http' ||
+        uri?.scheme == 'https';
+  }
+
+  Future<Uint8List> _resolveModelBytes() async {
     final source = CharacterHelper.getModelPath(widget.characterName);
     final uri = Uri.tryParse(source);
-    if (uri?.scheme == 'file') return File(uri!.toFilePath()).readAsBytes();
+    if (uri?.scheme == 'file') {
+      return File(uri!.toFilePath()).readAsBytes();
+    }
+    if (uri?.scheme == 'http' || uri?.scheme == 'https') {
+      final path = await _resolveCustomModelPath(source);
+      return File(path).readAsBytes();
+    }
+    return CharacterAssetCache.instance.load(CharacterHelper.sharedModelPath);
+  }
+
+  Future<String> _resolveCustomModelPath(String source) async {
+    final uri = Uri.tryParse(source);
+    if (uri?.scheme == 'file') return uri!.toFilePath();
     if (uri?.scheme == 'http' || uri?.scheme == 'https') {
       final manager = sl<ResourceManager>();
       final path =
@@ -151,40 +149,143 @@ class _MobileCharacterViewerState extends State<MobileCharacterViewer>
           await manager
               .downloadAndCacheFile(source, folder: 'models')
               .timeout(const Duration(seconds: 30));
-      if (path == null)
+      if (path == null) {
         throw StateError('Custom model has not been downloaded');
-      return File(path).readAsBytes();
+      }
+      return path;
     }
-    return CharacterAssetCache.instance.load(source);
+    throw StateError('Unsupported character model source');
   }
 
-  Future<void> _loadModel(WebViewController controller, int generation) async {
-    try {
-      final bytes = await _modelBytes();
-      if (!mounted || generation != _generation) return;
-      await controller.runJavaScript('GlowViewer.begin(${bytes.length});');
-      // Bound temporary channel strings instead of retaining an 8 MB base64
-      // copy of the model per view. Skeleton and texture bytes stay untouched.
-      const chunkSize = 384 * 1024;
-      for (var offset = 0; offset < bytes.length; offset += chunkSize) {
+  Future<void> _bootWebView(
+    int generation,
+    Future<void> Function() loadPage,
+  ) async {
+    final controller = WebViewController();
+    _controller = controller;
+    await controller.setJavaScriptMode(JavaScriptMode.unrestricted);
+    await controller.setBackgroundColor(const Color(0xFFF4F7F5));
+    if (controller.platform is AndroidWebViewController) {
+      await (controller.platform as AndroidWebViewController)
+          .setAllowFileAccess(true);
+    }
+    await controller.addJavaScriptChannel(
+      'GlowCharacter',
+      onMessageReceived: (message) {
         if (!mounted || generation != _generation) return;
-        final end = (offset + chunkSize).clamp(0, bytes.length);
-        final chunk = base64Encode(Uint8List.sublistView(bytes, offset, end));
-        await controller.runJavaScript('GlowViewer.append("$chunk", $offset);');
-      }
+        _onBridgeMessage(message.message, controller, generation);
+      },
+    );
+    await controller.setNavigationDelegate(
+      NavigationDelegate(
+        onNavigationRequest: (request) {
+          final url = request.url;
+          return url.startsWith('file:') || url.startsWith('about:')
+              ? NavigationDecision.navigate
+              : NavigationDecision.prevent;
+        },
+        onWebResourceError: (error) {
+          if (error.isForMainFrame == true) {
+            _fail(error.description, generation);
+          }
+        },
+      ),
+    );
+    if (!mounted || generation != _generation) return;
+    setState(() {});
+    _timeout?.cancel();
+    _timeout = Timer(
+      const Duration(seconds: 45),
+      () => _fail('Character initialization timed out', generation),
+    );
+    await loadPage();
+  }
+
+  void _onBridgeMessage(
+    String raw,
+    WebViewController controller,
+    int generation,
+  ) {
+    final payload = jsonDecode(raw) as Map<String, dynamic>;
+    switch (payload['type']) {
+      case 'boot':
+        if (_booted) return;
+        _booted = true;
+        unawaited(_startModel(controller, generation));
+      case 'ready':
+        if (_error != null) return;
+        _timeout?.cancel();
+        _startup.stop();
+        if (kDebugMode) {
+          debugPrint(
+            'Character mobile ready: ${_startup.elapsedMilliseconds}ms; '
+            '${payload['triangles']} triangles; ${payload['clips']}',
+          );
+        }
+        setState(() => _ready = true);
+        widget.onReady?.call();
+      case 'loaded':
+        _timeout?.cancel();
+      case 'error':
+        _fail(payload['message'] ?? 'WebGL initialization failed', generation);
+      case 'sample':
+        if (kDebugMode) debugPrint('Character mobile sample: $payload');
+    }
+  }
+
+  Future<void> _startModel(
+    WebViewController controller,
+    int generation,
+  ) async {
+    try {
       if (!mounted || generation != _generation) return;
-      await controller.runJavaScript(
-        'GlowViewer.update(${jsonEncode(_state(seek: true))});GlowViewer.load();',
-      );
+      final state = jsonEncode(_state(seek: true));
+      await controller.runJavaScript('GlowViewer.update($state);');
+
+      if (!_isAndroid && _iosModelFileName != null) {
+        await controller.runJavaScript(
+          'GlowViewer.loadLocal(${jsonEncode(_iosModelFileName)});',
+        );
+        return;
+      }
+
+      final bytes = await (_modelBytesFuture ?? _resolveModelBytes());
+      _modelBytesFuture = null;
+      if (!mounted || generation != _generation) return;
+      await _injectModelBytes(controller, bytes, generation);
     } catch (error) {
       _fail(error, generation);
     }
   }
 
+  Future<void> _injectModelBytes(
+    WebViewController controller,
+    Uint8List bytes,
+    int generation,
+  ) async {
+    await controller.runJavaScript('GlowViewer.begin(${bytes.length});');
+    const chunkSize = 1024 * 1024;
+    const batchSize = 3;
+    final parts = <String>[];
+    for (var offset = 0; offset < bytes.length; offset += chunkSize) {
+      if (!mounted || generation != _generation) return;
+      final end = (offset + chunkSize).clamp(0, bytes.length);
+      final chunk = base64Encode(Uint8List.sublistView(bytes, offset, end));
+      parts.add('["$chunk",$offset]');
+      if (parts.length >= batchSize || end >= bytes.length) {
+        await controller.runJavaScript(
+          'GlowViewer.appendBatch([${parts.join(',')}]);',
+        );
+        parts.clear();
+      }
+    }
+    if (!mounted || generation != _generation) return;
+    await controller.runJavaScript('GlowViewer.loadBuffered();');
+  }
+
   Map<String, Object> _state({bool seek = false}) {
     final position =
-        widget.playbackPosition?.value ??
-        _playbackClock.elapsed;
+        widget.playbackPosition?.value ?? _playbackClock.elapsed;
     final color =
         CharacterHelper.getColor(widget.characterName).toARGB32() & 0xFFFFFF;
     return {
@@ -262,8 +363,9 @@ class _MobileCharacterViewerState extends State<MobileCharacterViewer>
       _syncPlaybackClock();
       _sendState();
     }
-    if (widget.playbackPosition == null && widget.isPlaying && visible)
+    if (widget.playbackPosition == null && widget.isPlaying && visible) {
       _sendState();
+    }
   }
 
   void _fail(Object error, int generation) {
@@ -281,16 +383,43 @@ class _MobileCharacterViewerState extends State<MobileCharacterViewer>
   @override
   void didUpdateWidget(covariant MobileCharacterViewer oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.storyText != widget.storyText)
+    if (oldWidget.storyText != widget.storyText) {
       _plan = StoryMotionPlan.fromText(widget.storyText);
-    if (oldWidget.storyText != widget.storyText) _playbackClock.reset();
+      _playbackClock.reset();
+    }
     _syncPlaybackClock();
     if (oldWidget.playbackPosition != widget.playbackPosition) {
       oldWidget.playbackPosition?.removeListener(_positionChanged);
       widget.playbackPosition?.addListener(_positionChanged);
     }
-    if (oldWidget.characterName != widget.characterName ||
-        oldWidget.storyText != widget.storyText ||
+    if (oldWidget.characterName != widget.characterName) {
+      final oldSource = CharacterHelper.getModelPath(oldWidget.characterName);
+      final newSource = CharacterHelper.getModelPath(widget.characterName);
+      final sameSharedModel =
+          oldSource == newSource &&
+          !_isRemoteOrFileSource(oldSource) &&
+          !_isRemoteOrFileSource(newSource);
+      if (sameSharedModel && _booted && _controller != null && _error == null) {
+        // Same offline GLB: only recolor — avoid tearing down the WebView.
+        _sendState(seek: true);
+        if (_ready) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) widget.onReady?.call();
+          });
+        }
+        return;
+      }
+      unawaited(_release(_controller));
+      setState(() {
+        _controller = null;
+        _error = null;
+        _ready = false;
+      });
+      _modelBytesFuture = _resolveModelBytes();
+      unawaited(_initialize());
+      return;
+    }
+    if (oldWidget.storyText != widget.storyText ||
         oldWidget.motion != widget.motion ||
         oldWidget.isPlaying != widget.isPlaying ||
         oldWidget.isSpeaking != widget.isSpeaking ||
@@ -338,6 +467,7 @@ class _MobileCharacterViewerState extends State<MobileCharacterViewer>
       _controller = null;
       _error = null;
     });
+    _modelBytesFuture = _resolveModelBytes();
     unawaited(_initialize());
   }
 
@@ -405,7 +535,8 @@ class _GlowingLoader extends StatefulWidget {
   State<_GlowingLoader> createState() => _GlowingLoaderState();
 }
 
-class _GlowingLoaderState extends State<_GlowingLoader> with SingleTickerProviderStateMixin {
+class _GlowingLoaderState extends State<_GlowingLoader>
+    with SingleTickerProviderStateMixin {
   late AnimationController _controller;
 
   @override

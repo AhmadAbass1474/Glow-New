@@ -1,8 +1,24 @@
-# Supplied Glow character, facial rig and palette
+# Glow dinosaur mascot (runtime)
 
-The active model is `assets/3d/glow_mascot.glb`, built directly from the user's
-`port_frontal.glb`. The unchanged source is saved outside the Flutter bundle at
-`tools/character/source/port_frontal.glb`.
+The active model is `assets/3d/glow_mascot.glb`: one shared skinned dinosaur for
+all five identities (`fort`…`qort`), plus a mountable `Hat` material for studio
+tinting. Color identities are applied at runtime via the skin palette (green
+atlas regions only). Mobile and web both load this same GLB through
+`SmartCharacterViewer`.
+
+Rebuild tooling lives under `tools/character/` (dino pipeline +
+`mount_ready_hat.py`). Intermediate GLBs are not shipped in the Flutter bundle.
+
+---
+
+# Legacy notes (humanoid port_frontal pipeline)
+
+The sections below document the earlier humanoid `port_frontal` facial-rig
+pipeline. The shipping asset is now the dinosaur mascot above; keep the notes
+for historical rebuild context only.
+
+The previous model was built from `port_frontal.glb`. The unchanged source was
+saved outside the Flutter bundle at `tools/character/source/port_frontal.glb`.
 
 Source SHA-256: `5b316a34733e59fa7206568e0173745e6e310aab5053c156c8fbb7400fb71a84`.
 The builder refuses other source hashes and refuses to overwrite the source.

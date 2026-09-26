@@ -17,6 +17,13 @@ class CharacterSkinPalette {
       }
       final material = object.material;
       if (material == null || _materials.contains(material)) return;
+      final name = material.name;
+      if (name == 'Hat' ||
+          name == 'HatBand' ||
+          name == 'HatTrim' ||
+          name == 'HatSkin') {
+        return;
+      }
       _materials.add(material);
       material.customProgramCacheKey = () => 'glow-skin-palette-v1';
       material.onBeforeCompile = (dynamic shader, dynamic renderer) {

@@ -623,6 +623,8 @@ class _ChildStoryViewerScreenState extends State<ChildStoryViewerScreen>
                             builder: (context, position, child) {
                               String activeChar = story.characterName;
                               CharacterMotion? activeMotion;
+                              var showHat = false;
+                              var hatColor = const Color(0xFF2C2C2E);
                               if (_currentTimeline != null) {
                                 final t = position.inMilliseconds / 1000.0;
                                 activeChar =
@@ -641,6 +643,11 @@ class _ChildStoryViewerScreenState extends State<ChildStoryViewerScreen>
                                         (m) => m.name == motionId,
                                         orElse: () => CharacterMotion.idle,
                                       );
+                                }
+                                final hat = _currentTimeline!.getActiveHatAt(t);
+                                if (hat != null) {
+                                  showHat = true;
+                                  hatColor = hat.color;
                                 }
                               }
 
@@ -689,6 +696,8 @@ class _ChildStoryViewerScreenState extends State<ChildStoryViewerScreen>
                                                   playbackPosition:
                                                       _positionNotifier,
                                                   motion: activeMotion,
+                                                  showHat: showHat,
+                                                  hatColor: hatColor,
                                                   onReady: () => _onCharacterReady(_sceneGeneration),
                                                 ),
                                               ),

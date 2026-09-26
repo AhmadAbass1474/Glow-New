@@ -24,7 +24,7 @@ class SmartCharacterViewer extends StatelessWidget {
     this.motion,
     this.interactive = true,
     this.showSkeleton = false,
-    this.showHat = true,
+    this.showHat = false,
     this.hatColor = const Color(0xFF2C2C2E),
     this.onReady,
   });
@@ -535,7 +535,14 @@ class _CharacterSurfaceState extends State<_CharacterSurface>
     super.didUpdateWidget(oldWidget);
     final old = oldWidget.configuration;
     if (oldWidget.size != widget.size) _fitCamera();
-    if (old.characterName != config.characterName) _recolor();
+    if (old.characterName != config.characterName) {
+      _recolor();
+      if (_ready) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) config.onReady?.call();
+        });
+      }
+    }
     if (old.showHat != config.showHat || old.hatColor != config.hatColor) {
       _applyHat();
     }

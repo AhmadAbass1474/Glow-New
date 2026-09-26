@@ -27,7 +27,7 @@ void main() {
   );
 
   test(
-    'actual runtime loader skins the supplied character and all expression clips',
+    'runtime loader skins the dino mascot, hat and expression clips',
     () async {
       final bytes = await rootBundle.load(CharacterHelper.sharedModelPath);
       final loader = three.GLTFLoader();
@@ -35,22 +35,20 @@ void main() {
       expect(data, isNotNull);
       final root = data!.scene;
       final meshes = <three.SkinnedMesh>[];
+      final materials = <String>{};
       root.traverse((object) {
-        if (object is three.SkinnedMesh) meshes.add(object);
+        if (object is three.SkinnedMesh) {
+          meshes.add(object);
+          final material = object.material;
+          if (material?.name != null) materials.add(material!.name!);
+        }
       });
       expect(meshes, isNotEmpty);
-      expect(meshes, hasLength(4));
+      expect(meshes, hasLength(3));
+      expect(materials, contains('Hat'));
       expect(meshes.first.geometry!.attributes['_glow_skin_region'], isNotNull);
-      expect(meshes.first.skeleton!.bones, hasLength(21));
-      expect(root.getObjectByName('EyeLeft'), isA<three.Bone>());
-      expect(root.getObjectByName('EyeRight'), isA<three.Bone>());
-      expect(
-        meshes.where((mesh) => mesh.morphTargetInfluences.length == 4),
-        hasLength(1),
-      );
+      expect(meshes.first.skeleton!.bones, hasLength(17));
       expect(root.getObjectByName('Jaw'), isA<three.Bone>());
-      expect(root.getObjectByName('MouthCornerLeft'), isA<three.Bone>());
-      expect(root.getObjectByName('MouthCornerRight'), isA<three.Bone>());
       expect(root.getObjectByName('Mouth'), isNull);
       expect(root.getObjectByName('LeftHand'), isA<three.Bone>());
       expect(root.getObjectByName('RightFoot'), isA<three.Bone>());
@@ -99,7 +97,6 @@ void main() {
           .play();
       mixer.update(0.4);
       expect((arm.quaternion.z - rest.z).abs(), greaterThan(0.1));
-      // Same vertex buffer, visibly different deformed positions: real skinning.
       final mesh = meshes.first;
       root.updateMatrixWorld(true);
       final positions = mesh.geometry!.attributes['position'];

@@ -5,11 +5,15 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 // Bundled as one local classic script: no CDN, network import or model URL.
 const send = (type, detail = {}) => window.GlowCharacter?.postMessage(JSON.stringify({ type, ...detail }));
 let renderer, scene, camera, controls, model, mixer, skeleton, jaw, jawRest, lids;
-let buffer, frame = 0, last = 0, time = 0, motionTime = 0, previousMotion;
+let frame = 0, last = 0, time = 0, motionTime = 0, previousMotion;
 let active, ready = false, disposed = false, firstFrame = false, failed = false;
 let sampledFrames = 0, sampleStart = 0;
-let state = { motion: 'Idle', playing: true, speaking: false, visible: true, interactive: true, skeleton: false, originalGreen: true, color: '#22592a', position: 0 };
+let state = {
+  motion: 'Idle', playing: true, speaking: false, visible: true, interactive: true,
+  skeleton: false, hat: true, hatColor: '#2c2c2e', originalGreen: true, color: '#22592a', position: 0,
+};
 const actions = new Map(), eyes = [];
+const HAT_MATERIALS = new Set(['Hat', 'HatBand', 'HatTrim', 'HatSkin']);
 const target = { value: new THREE.Color() }, strength = { value: 0 };
 let nextBlink = 1.8, blinkStart = -10, blinkDuration = .26, nextLook = 1.2;
 let lookX = 0, lookY = 0, gazeX = 0, gazeY = 0, squint = 0, speechBlend = 0;
@@ -64,7 +68,7 @@ function animateEyes(dt) {
 function palette(mesh, seen) {
   if (!mesh.geometry?.getAttribute('_glow_skin_region')) return;
   for (const material of [mesh.material].flat()) {
-    if (seen.has(material)) continue;
+    if (!material || seen.has(material) || HAT_MATERIALS.has(material.name)) continue;
     seen.add(material);
     material.customProgramCacheKey = () => 'glow-skin-palette-v1';
     material.onBeforeCompile = shader => {
@@ -89,11 +93,34 @@ function selectMotion() {
   if (active) next.crossFadeFrom(active, .3, false);
   active = next;
 }
+function applyHat() {
+  if (!model) return;
+  const show = state.hat !== false;
+  const tint = new THREE.Color(state.hatColor || '#2c2c2e');
+  const skin = new THREE.Color(state.color || '#22592a');
+  model.traverse(object => {
+    for (const material of [object.material].flat().filter(Boolean)) {
+      const name = material.name;
+      if (!HAT_MATERIALS.has(name)) continue;
+      object.visible = show;
+      if (!show) continue;
+      if (name === 'HatSkin') material.color.copy(skin);
+      else {
+        const shade = name === 'HatBand' ? .45 : 1;
+        material.color.setRGB(tint.r * shade, tint.g * shade, tint.b * shade);
+      }
+      material.transparent = false;
+      material.opacity = 1;
+      material.depthWrite = true;
+      material.needsUpdate = true;
+    }
+  });
+}
 function resize() {
   if (!renderer || !camera) return;
   const w = Math.max(1, innerWidth), h = Math.max(1, innerHeight);
-  // Preserve every source vertex/texture, bound only the framebuffer cost.
-  renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2, 1100 / Math.max(w, h)));
+  // Match web sharpness more closely while keeping a safe mobile cap.
+  renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2, 1280 / Math.max(w, h)));
   renderer.setSize(w, h, false);
   camera.aspect = w / h; camera.updateProjectionMatrix();
   const distance = Math.max(3.5, (model?.userData.frameWidth ?? 3.5) / camera.aspect) / (2 * Math.tan(38 * Math.PI / 360)) * 1.26;
@@ -134,44 +161,97 @@ function tick(now) {
   }
   if (state.playing || orbitChanged) schedule();
 }
-async function load() {
+function _localUrlAllowed(url) {
+  return url.startsWith('blob:') ||
+    url.startsWith('data:') ||
+    url.startsWith('file:') ||
+    url.startsWith('./') ||
+    !url.includes('://');
+}
+function _resourceManager() {
+  const manager = new THREE.LoadingManager();
+  manager.setURLModifier(url => {
+    if (_localUrlAllowed(url)) return url;
+    throw new Error('External model resources are not permitted');
+  });
+  return manager;
+}
+async function _mountGltf(data) {
+  if (disposed) return;
+  model = data.scene; scene.add(model);
+  const seen = new Set();
+  const maxAniso = renderer.capabilities.getMaxAnisotropy?.() ?? 1;
+  model.traverse(object => {
+    if (object.isSkinnedMesh) object.frustumCulled = false;
+    palette(object, seen);
+    if (object.morphTargetDictionary?.BlinkLeftClosed !== undefined) { lids = object; lids.visible = false; }
+    for (const material of [object.material].flat().filter(Boolean)) {
+      if (material.map) {
+        material.map.colorSpace = THREE.SRGBColorSpace;
+        material.map.anisotropy = Math.min(8, maxAniso);
+        material.map.needsUpdate = true;
+      }
+      if (material.normalMap) {
+        material.normalMap.anisotropy = Math.min(8, maxAniso);
+        material.normalMap.needsUpdate = true;
+      }
+      material.needsUpdate = true;
+    }
+  });
+  for (const name of ['EyeLeft', 'EyeRight']) { const eye = model.getObjectByName(name); if (eye) eyes.push(eye); }
+  jaw = model.getObjectByName('Jaw'); jawRest = jaw?.quaternion.clone();
+  const bounds = new THREE.Box3().setFromObject(model), size = bounds.getSize(new THREE.Vector3()), center = bounds.getCenter(new THREE.Vector3());
+  if (!(size.y > 0)) throw new Error('Empty model bounds');
+  const scale = 3.5 / size.y;
+  model.scale.setScalar(scale); model.position.set(-center.x * scale, -bounds.min.y * scale, -center.z * scale);
+  model.userData.frameWidth = size.x * scale;
+  mixer = new THREE.AnimationMixer(model);
+  for (const clip of data.animations) actions.set(clip.name, mixer.clipAction(clip));
+  applyHat();
+  update(state); selectMotion(); mixer.update(0); ready = true; send('loaded'); resize(); schedule();
+}
+async function loadLocal(fileName) {
+  try {
+    const data = await new GLTFLoader(_resourceManager()).loadAsync(fileName);
+    await _mountGltf(data);
+  } catch (error) { fail(error); }
+}
+let buffer = null;
+function begin(length) { buffer = new Uint8Array(length); }
+function appendBatch(parts) {
+  for (const [encoded, offset] of parts) {
+    const binary = atob(encoded);
+    const view = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; ++i) view[i] = binary.charCodeAt(i);
+    buffer.set(view, offset);
+  }
+}
+async function loadBuffered() {
   try {
     const bytes = buffer.buffer; buffer = null;
-    // No external resources are accepted; the supplied GLB embeds all textures.
-    const manager = new THREE.LoadingManager();
-    manager.setURLModifier(url => {
-      if (url.startsWith('blob:') || url.startsWith('data:')) return url;
-      throw new Error('External model resources are not permitted');
-    });
-    const data = await new GLTFLoader(manager).parseAsync(bytes, '');
-    if (disposed) return;
-    model = data.scene; scene.add(model);
-    const seen = new Set();
-    model.traverse(object => {
-      if (object.isSkinnedMesh) object.frustumCulled = false;
-      palette(object, seen);
-      if (object.morphTargetDictionary?.BlinkLeftClosed !== undefined) { lids = object; lids.visible = false; }
-    });
-    for (const name of ['EyeLeft', 'EyeRight']) { const eye = model.getObjectByName(name); if (eye) eyes.push(eye); }
-    jaw = model.getObjectByName('Jaw'); jawRest = jaw?.quaternion.clone();
-    const bounds = new THREE.Box3().setFromObject(model), size = bounds.getSize(new THREE.Vector3()), center = bounds.getCenter(new THREE.Vector3());
-    if (!(size.y > 0)) throw new Error('Empty model bounds');
-    const scale = 3.5 / size.y;
-    model.scale.setScalar(scale); model.position.set(-center.x * scale, -bounds.min.y * scale, -center.z * scale);
-    model.userData.frameWidth = size.x * scale;
-    mixer = new THREE.AnimationMixer(model);
-    for (const clip of data.animations) actions.set(clip.name, mixer.clipAction(clip));
-    update(state); selectMotion(); mixer.update(0); ready = true; send('loaded'); resize(); schedule();
+    const data = await new GLTFLoader(_resourceManager()).parseAsync(bytes, '');
+    await _mountGltf(data);
+  } catch (error) { fail(error); }
+}
+async function loadFromBase64(encoded) {
+  try {
+    const binary = atob(encoded);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; ++i) bytes[i] = binary.charCodeAt(i);
+    const data = await new GLTFLoader(_resourceManager()).parseAsync(bytes.buffer, '');
+    await _mountGltf(data);
   } catch (error) { fail(error); }
 }
 function update(next) {
   const wasSpeaking = state.speaking;
   const seek = next.seek === true;
+  const hatChanged = next.hat !== undefined || next.hatColor !== undefined || next.color !== undefined;
   state = { ...state, ...next };
   target.value.set(state.color); strength.value = state.originalGreen ? 0 : 1;
   if (controls) controls.enabled = state.interactive;
   if (state.skeleton && model && !skeleton) { skeleton = new THREE.SkeletonHelper(model); scene.add(skeleton); }
   if (skeleton) skeleton.visible = state.skeleton;
+  if (hatChanged || next.seek === true) applyHat();
   if (mixer) {
     selectMotion();
     if (seek) { mixer.stopAllAction(); active = null; selectMotion(); if (active) active.time = state.position % active.getClip().duration; mixer.update(0); }
@@ -183,7 +263,7 @@ function update(next) {
 function fail(error) { if (disposed || failed) return; failed = true; cancelAnimationFrame(frame); frame = 0; send('error', { message: String(error?.message ?? error) }); }
 function dispose() {
   if (disposed) return;
-  disposed = true; ready = false; buffer = null;
+  disposed = true; ready = false;
   cancelAnimationFrame(frame); controls?.dispose(); mixer?.stopAllAction();
   const textures = new Set(), materials = new Set(), geometries = new Set();
   scene?.traverse(object => {
@@ -197,23 +277,30 @@ function dispose() {
   for (const geometry of geometries) geometry.dispose();
   renderer?.dispose(); renderer?.forceContextLoss();
 }
-window.GlowViewer = {
-  begin: length => { buffer = new Uint8Array(length); },
-  append: (encoded, offset) => { const chunk = atob(encoded); for (let i = 0; i < chunk.length; i++) buffer[offset + i] = chunk.charCodeAt(i); },
-  load, update, dispose,
-};
+window.GlowViewer = { loadLocal, loadFromBase64, begin, appendBatch, loadBuffered, update, dispose };
 try {
-  renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'default' });
-  renderer.setClearColor(0xf4f7f5); renderer.outputColorSpace = THREE.SRGBColorSpace; renderer.toneMapping = THREE.NoToneMapping;
+  // MSAA on: WebView GL is stable (unlike native flutter_angle FBOs).
+  renderer = new THREE.WebGLRenderer({
+    antialias: true,
+    alpha: false,
+    powerPreference: 'high-performance',
+    preserveDrawingBuffer: false,
+  });
+  renderer.setClearColor(0xf4f7f5);
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.toneMapping = THREE.NoToneMapping;
+  // Keep lighting response close to the web three_js viewer.
+  if ('physicallyCorrectLights' in renderer) renderer.physicallyCorrectLights = false;
   renderer.debug.onShaderError = () => fail(new Error('Character shader compilation failed'));
   document.body.appendChild(renderer.domElement);
   renderer.domElement.addEventListener('webglcontextlost', event => { event.preventDefault(); fail(new Error('Graphics context lost')); });
   scene = new THREE.Scene(); camera = new THREE.PerspectiveCamera(38, 1, .05, 100);
   controls = new OrbitControls(camera, renderer.domElement); controls.enablePan = false; controls.enableDamping = true; controls.minDistance = 3; controls.maxDistance = 16; controls.target.set(0, 1.78, 0);
   controls.addEventListener('change', () => { if (!state.playing) { draw(); schedule(); } });
-  scene.add(new THREE.HemisphereLight(0xeaf6ff, 0x8d8270, .75));
-  const key = new THREE.DirectionalLight(0xfff2dc, 1.7); key.position.set(-3, 6, 6); scene.add(key);
-  const rim = new THREE.DirectionalLight(0xd7efff, .65); rim.position.set(4, 3, -3); scene.add(rim);
+  scene.add(new THREE.HemisphereLight(0xeaf6ff, 0x8d8270, .85));
+  const key = new THREE.DirectionalLight(0xfff2dc, 1.85); key.position.set(-3, 6, 6); scene.add(key);
+  const fill = new THREE.DirectionalLight(0xffffff, .35); fill.position.set(2, 2, 4); scene.add(fill);
+  const rim = new THREE.DirectionalLight(0xd7efff, .7); rim.position.set(4, 3, -3); scene.add(rim);
   for (let i = 0; i < 5; i++) {
     const shadow = new THREE.Mesh(new THREE.SphereGeometry(1, 32, 8), new THREE.MeshBasicMaterial({ color: 0x31483b, transparent: true, opacity: .025, depthWrite: false }));
     shadow.position.set(0, -.04 - i * .001, 0); shadow.scale.set(.6 + i * .1, .018, .38 + i * .07); scene.add(shadow);

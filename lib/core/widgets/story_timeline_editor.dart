@@ -37,19 +37,33 @@ class _StoryTimelineEditorState extends State<StoryTimelineEditor> {
   Duration _totalDuration = Duration.zero;
   List<StoryBlock> _blocks = [];
   List<StoryMotionBlock> _motionBlocks = [];
+  List<StoryHatBlock> _hatBlocks = [];
   bool _isLoading = true;
   
   double _pixelsPerSecond = 80.0;
   final double _blockHeight = 50.0;
   final double _trackHeight = 60.0;
   final double _waveformHeight = 40.0;
+
+  static const _hatPaletteColors = <Color>[
+    Color(0xFF2C2C2E),
+    Color(0xFF1A1A1A),
+    Color(0xFF4A3728),
+    Color(0xFF8B4513),
+    Color(0xFFC0392B),
+    Color(0xFF277A59),
+    Color(0xFF2E86C1),
+    Color(0xFFF5F5F5),
+  ];
   
   final GlobalKey _trackKey = GlobalKey();
   final GlobalKey _motionTrackKey = GlobalKey();
+  final GlobalKey _hatTrackKey = GlobalKey();
   final ScrollController _scrollController = ScrollController();
   
   int? _selectedBlockIndex;
   int? _selectedMotionBlockIndex;
+  int? _selectedHatBlockIndex;
   String? _lastPreviewCharacter;
   String? _lastPreviewMotion;
 
@@ -63,6 +77,9 @@ class _StoryTimelineEditorState extends State<StoryTimelineEditor> {
       }
       if (widget.initialTimeline!.motionBlocks.isNotEmpty) {
         _motionBlocks = List.from(widget.initialTimeline!.motionBlocks);
+      }
+      if (widget.initialTimeline!.hatBlocks.isNotEmpty) {
+        _hatBlocks = List.from(widget.initialTimeline!.hatBlocks);
       }
     }
     _loadAudioDuration();
@@ -136,9 +153,11 @@ class _StoryTimelineEditorState extends State<StoryTimelineEditor> {
   void _notifyChanged() {
     _blocks.sort((a, b) => a.startTime.compareTo(b.startTime));
     _motionBlocks.sort((a, b) => a.startTime.compareTo(b.startTime));
+    _hatBlocks.sort((a, b) => a.startTime.compareTo(b.startTime));
     widget.onTimelineChanged(StoryTimeline(
       blocks: _blocks,
       motionBlocks: _motionBlocks,
+      hatBlocks: _hatBlocks,
       totalDuration: _totalDuration.inMilliseconds / 1000.0,
     ));
   }
@@ -281,6 +300,12 @@ class _StoryTimelineEditorState extends State<StoryTimelineEditor> {
         _selectedMotionBlockIndex = null;
       });
       _notifyChanged();
+    } else if (_selectedHatBlockIndex != null) {
+      setState(() {
+        _hatBlocks.removeAt(_selectedHatBlockIndex!);
+        _selectedHatBlockIndex = null;
+      });
+      _notifyChanged();
     }
   }
 
@@ -294,6 +319,13 @@ class _StoryTimelineEditorState extends State<StoryTimelineEditor> {
   String? _getActiveMotionAt(double time) {
     for (var b in _motionBlocks) {
       if (time >= b.startTime && time <= b.endTime) return b.motionId;
+    }
+    return null;
+  }
+
+  StoryHatBlock? _getActiveHatAt(double time) {
+    for (var b in _hatBlocks) {
+      if (time >= b.startTime && time <= b.endTime) return b;
     }
     return null;
   }
@@ -335,6 +367,7 @@ class _StoryTimelineEditorState extends State<StoryTimelineEditor> {
       _motionBlocks = updatedBlocks;
       _selectedMotionBlockIndex = _motionBlocks.indexWhere((b) => b.startTime == timeInSeconds);
       _selectedBlockIndex = null;
+      _selectedHatBlockIndex = null;
     });
     _notifyChanged();
   }
@@ -394,6 +427,110 @@ class _StoryTimelineEditorState extends State<StoryTimelineEditor> {
     setState(() {
       _motionBlocks[index] = StoryMotionBlock(
         motionId: block.motionId,
+        startTime: newStart,
+        endTime: newStart + duration,
+      );
+    });
+    _notifyChanged();
+  }
+
+  void _addHatBlockAtTime(String colorHex, double timeInSeconds) {
+    final totalSeconds = _totalDuration.inMilliseconds / 1000.0;
+    if (totalSeconds == 0) return;
+
+    if (timeInSeconds < 0) timeInSeconds = 0;
+    double end = timeInSeconds + 3.0;
+    if (end > totalSeconds) end = totalSeconds;
+
+    final List<StoryHatBlock> updatedBlocks = [];
+    for (var b in _hatBlocks) {
+      if (b.endTime <= timeInSeconds || b.startTime >= end) {
+        updatedBlocks.add(b);
+      } else if (b.startTime < timeInSeconds && b.endTime > end) {
+        updatedBlocks.add(
+          StoryHatBlock(colorHex: b.colorHex, startTime: b.startTime, endTime: timeInSeconds),
+        );
+        updatedBlocks.add(
+          StoryHatBlock(colorHex: b.colorHex, startTime: end, endTime: b.endTime),
+        );
+      } else if (b.startTime < timeInSeconds && b.endTime <= end) {
+        updatedBlocks.add(
+          StoryHatBlock(colorHex: b.colorHex, startTime: b.startTime, endTime: timeInSeconds),
+        );
+      } else if (b.startTime >= timeInSeconds && b.endTime > end) {
+        updatedBlocks.add(
+          StoryHatBlock(colorHex: b.colorHex, startTime: end, endTime: b.endTime),
+        );
+      }
+    }
+    updatedBlocks.add(
+      StoryHatBlock(colorHex: colorHex, startTime: timeInSeconds, endTime: end),
+    );
+
+    setState(() {
+      _hatBlocks = updatedBlocks;
+      _selectedHatBlockIndex = _hatBlocks.indexWhere((b) => b.startTime == timeInSeconds);
+      _selectedBlockIndex = null;
+      _selectedMotionBlockIndex = null;
+    });
+    _notifyChanged();
+  }
+
+  void _updateHatBlockStart(int index, double deltaSeconds) {
+    final block = _hatBlocks[index];
+    double newStart = block.startTime + deltaSeconds;
+    if (newStart < 0) newStart = 0;
+    if (newStart > block.endTime - 0.5) newStart = block.endTime - 0.5;
+    if (index > 0) {
+      final prevBlock = _hatBlocks[index - 1];
+      if (newStart < prevBlock.endTime) newStart = prevBlock.endTime;
+    }
+    setState(() {
+      _hatBlocks[index] = StoryHatBlock(
+        colorHex: block.colorHex,
+        startTime: newStart,
+        endTime: block.endTime,
+      );
+    });
+    _notifyChanged();
+  }
+
+  void _updateHatBlockEnd(int index, double deltaSeconds) {
+    final block = _hatBlocks[index];
+    double newEnd = block.endTime + deltaSeconds;
+    final totalSeconds = _totalDuration.inMilliseconds / 1000.0;
+    if (newEnd > totalSeconds) newEnd = totalSeconds;
+    if (newEnd < block.startTime + 0.5) newEnd = block.startTime + 0.5;
+    if (index < _hatBlocks.length - 1) {
+      final nextBlock = _hatBlocks[index + 1];
+      if (newEnd > nextBlock.startTime) newEnd = nextBlock.startTime;
+    }
+    setState(() {
+      _hatBlocks[index] = StoryHatBlock(
+        colorHex: block.colorHex,
+        startTime: block.startTime,
+        endTime: newEnd,
+      );
+    });
+    _notifyChanged();
+  }
+
+  void _moveHatBlock(int index, double deltaSeconds) {
+    final block = _hatBlocks[index];
+    double newStart = block.startTime + deltaSeconds;
+    double duration = block.endTime - block.startTime;
+    if (newStart < 0) newStart = 0;
+    final totalSeconds = _totalDuration.inMilliseconds / 1000.0;
+    if (newStart + duration > totalSeconds) newStart = totalSeconds - duration;
+    if (index > 0 && newStart < _hatBlocks[index - 1].endTime) {
+      newStart = _hatBlocks[index - 1].endTime;
+    }
+    if (index < _hatBlocks.length - 1 && (newStart + duration) > _hatBlocks[index + 1].startTime) {
+      newStart = _hatBlocks[index + 1].startTime - duration;
+    }
+    setState(() {
+      _hatBlocks[index] = StoryHatBlock(
+        colorHex: block.colorHex,
         startTime: newStart,
         endTime: newStart + duration,
       );
@@ -473,6 +610,8 @@ class _StoryTimelineEditorState extends State<StoryTimelineEditor> {
                               motion: _getActiveMotionAt(currentTime) != null 
                                   ? CharacterMotion.values.firstWhere((m) => m.name == _getActiveMotionAt(currentTime)!, orElse: () => CharacterMotion.idle) 
                                   : null,
+                              showHat: _getActiveHatAt(currentTime) != null,
+                              hatColor: _getActiveHatAt(currentTime)?.color ?? const Color(0xFF2C2C2E),
                             )
                           : const Center(
                               child: Text(
@@ -603,6 +742,61 @@ class _StoryTimelineEditorState extends State<StoryTimelineEditor> {
                               }).toList(),
                             ),
                           ),
+                          const Divider(height: 1, color: AppColors.inputBorder),
+                          SizedBox(
+                            height: 50,
+                            child: ListView(
+                              scrollDirection: Axis.horizontal,
+                              children: [
+                                const Padding(
+                                  padding: EdgeInsets.symmetric(horizontal: 8, vertical: 14),
+                                  child: Text(
+                                    'قبعة',
+                                    style: TextStyle(
+                                      color: Colors.black54,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                                ..._hatPaletteColors.map((color) {
+                                  final dragData = StoryHatBlock.dragDataFor(color);
+                                  final selectedHex = _selectedHatBlockIndex != null &&
+                                          _selectedHatBlockIndex! < _hatBlocks.length
+                                      ? _hatBlocks[_selectedHatBlockIndex!].colorHex.toLowerCase()
+                                      : null;
+                                  final isSelected = selectedHex ==
+                                      ((color.toARGB32() & 0xFFFFFF)
+                                          .toRadixString(16)
+                                          .padLeft(6, '0'));
+                                  return Padding(
+                                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 10),
+                                    child: Draggable<String>(
+                                      data: dragData,
+                                      feedback: Material(
+                                        color: Colors.transparent,
+                                        child: Container(
+                                          width: 48,
+                                          height: _blockHeight,
+                                          decoration: BoxDecoration(
+                                            color: color,
+                                            borderRadius: BorderRadius.circular(AppColors.border_radius),
+                                            border: Border.all(color: Colors.black26),
+                                          ),
+                                          child: const Icon(Icons.face_retouching_natural, color: Colors.white70, size: 22),
+                                        ),
+                                      ),
+                                      childWhenDragging: Opacity(
+                                        opacity: 0.3,
+                                        child: _buildHatPaletteItem(color, false),
+                                      ),
+                                      child: _buildHatPaletteItem(color, isSelected),
+                                    ),
+                                  );
+                                }),
+                              ],
+                            ),
+                          ),
                         ],
                       ),
                     ),
@@ -657,7 +851,16 @@ class _StoryTimelineEditorState extends State<StoryTimelineEditor> {
                         const SizedBox(width: 5),
                         _buildToolButton(Icons.copy, 'تكرار', _selectedBlockIndex != null ? _duplicateBlock : null),
                         const SizedBox(width: 5),
-                        _buildToolButton(Icons.delete_outline, 'حذف', _selectedBlockIndex != null ? _deleteBlock : null, isDestructive: true),
+                        _buildToolButton(
+                          Icons.delete_outline,
+                          'حذف',
+                          (_selectedBlockIndex != null ||
+                                  _selectedMotionBlockIndex != null ||
+                                  _selectedHatBlockIndex != null)
+                              ? _deleteBlock
+                              : null,
+                          isDestructive: true,
+                        ),
                       ],
                     ),
                   ],
@@ -668,7 +871,7 @@ class _StoryTimelineEditorState extends State<StoryTimelineEditor> {
               Directionality(
                 textDirection: TextDirection.ltr,
                 child: SizedBox(
-                  height: 250,
+                  height: 320,
                   child: SingleChildScrollView(
                     controller: _scrollController,
                     scrollDirection: Axis.horizontal,
@@ -799,6 +1002,45 @@ class _StoryTimelineEditorState extends State<StoryTimelineEditor> {
                               ),
                             ),
 
+                            // Hat Blocks Track
+                            Positioned(
+                              left: 0,
+                              top: 25 + _waveformHeight + 5 + (_trackHeight + 5) * 2,
+                              width: trackWidth,
+                              height: _trackHeight,
+                              child: DragTarget<String>(
+                                onAcceptWithDetails: (details) {
+                                  final hex = StoryHatBlock.colorHexFromDrag(details.data);
+                                  if (hex == null) return;
+                                  if (_hatTrackKey.currentContext != null) {
+                                    final RenderBox box = _hatTrackKey.currentContext!.findRenderObject() as RenderBox;
+                                    final Offset localOffset = box.globalToLocal(details.offset);
+                                    final double time = localOffset.dx / _pixelsPerSecond;
+                                    _addHatBlockAtTime(hex, time);
+                                  }
+                                },
+                                builder: (context, candidateData, rejectedData) {
+                                  final canAccept = candidateData
+                                      .whereType<String>()
+                                      .any((d) => StoryHatBlock.colorHexFromDrag(d) != null);
+                                  return Container(
+                                    key: _hatTrackKey,
+                                    decoration: BoxDecoration(
+                                      color: canAccept ? Colors.deepOrange.withOpacity(0.2) : Colors.white.withOpacity(0.05),
+                                      borderRadius: BorderRadius.circular(AppColors.border_radius),
+                                      border: Border.all(color: canAccept ? Colors.deepOrange : Colors.transparent, width: 2),
+                                    ),
+                                    child: Stack(
+                                      clipBehavior: Clip.none,
+                                      children: _hatBlocks.asMap().entries.map((entry) {
+                                        return _buildHatBlockWidget(entry.key, entry.value);
+                                      }).toList(),
+                                    ),
+                                  );
+                                },
+                              ),
+                            ),
+
                             // Playhead
                             if (widget.positionNotifier != null)
                               Positioned(
@@ -884,6 +1126,26 @@ class _StoryTimelineEditorState extends State<StoryTimelineEditor> {
     );
   }
 
+  Widget _buildHatPaletteItem(Color color, bool isSelected) {
+    return Container(
+      width: 48,
+      height: _blockHeight,
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(AppColors.border_radius),
+        border: Border.all(
+          color: isSelected ? Colors.deepOrange : AppColors.inputBorder,
+          width: isSelected ? 2.5 : 1,
+        ),
+      ),
+      child: Icon(
+        Icons.face_retouching_natural,
+        color: color.computeLuminance() > 0.55 ? Colors.black54 : Colors.white70,
+        size: 22,
+      ),
+    );
+  }
+
   Widget _buildToolButton(IconData icon, String label, VoidCallback? onPressed, {bool isDestructive = false}) {
     final color = onPressed == null 
         ? Colors.black
@@ -926,6 +1188,8 @@ class _StoryTimelineEditorState extends State<StoryTimelineEditor> {
         onTap: () {
           setState(() {
             _selectedBlockIndex = index;
+            _selectedMotionBlockIndex = null;
+            _selectedHatBlockIndex = null;
           });
         },
         child: Stack(
@@ -1034,6 +1298,7 @@ class _StoryTimelineEditorState extends State<StoryTimelineEditor> {
           setState(() {
             _selectedMotionBlockIndex = index;
             _selectedBlockIndex = null;
+            _selectedHatBlockIndex = null;
           });
         },
         child: Stack(
@@ -1096,6 +1361,111 @@ class _StoryTimelineEditorState extends State<StoryTimelineEditor> {
                 child: GestureDetector(
                   onHorizontalDragUpdate: (details) {
                     _updateMotionBlockEnd(index, details.delta.dx / _pixelsPerSecond);
+                  },
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(4),
+                      border: Border.all(color: Colors.black, width: 0.5),
+                    ),
+                    child: const Icon(Icons.drag_indicator, size: 12, color: Colors.black),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHatBlockWidget(int index, StoryHatBlock block) {
+    final left = block.startTime * _pixelsPerSecond;
+    final width = (block.endTime - block.startTime) * _pixelsPerSecond;
+    final isSelected = _selectedHatBlockIndex == index;
+    final labelColor =
+        block.color.computeLuminance() > 0.55 ? Colors.black87 : Colors.white;
+
+    return Positioned(
+      left: left,
+      top: 5,
+      width: width,
+      height: _blockHeight,
+      child: GestureDetector(
+        onTap: () {
+          setState(() {
+            _selectedHatBlockIndex = index;
+            _selectedBlockIndex = null;
+            _selectedMotionBlockIndex = null;
+          });
+        },
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            GestureDetector(
+              onHorizontalDragUpdate: (details) {
+                _moveHatBlock(index, details.delta.dx / _pixelsPerSecond);
+              },
+              child: Container(
+                decoration: BoxDecoration(
+                  color: block.color,
+                  borderRadius: BorderRadius.circular(AppColors.border_radius),
+                  border: Border.all(
+                    color: isSelected ? Colors.deepOrange : Colors.black54,
+                    width: isSelected ? 2.5 : 1.0,
+                  ),
+                  boxShadow: const [
+                    BoxShadow(color: Colors.black26, blurRadius: 4, offset: Offset(0, 2)),
+                  ],
+                ),
+                child: Center(
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.face_retouching_natural, size: 14, color: labelColor),
+                      const SizedBox(width: 4),
+                      Text(
+                        'قبعة',
+                        style: TextStyle(
+                          color: labelColor,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            if (isSelected)
+              Positioned(
+                left: -10,
+                top: 0,
+                bottom: 0,
+                width: 20,
+                child: GestureDetector(
+                  onHorizontalDragUpdate: (details) {
+                    _updateHatBlockStart(index, details.delta.dx / _pixelsPerSecond);
+                  },
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(4),
+                      border: Border.all(color: Colors.black, width: 0.5),
+                    ),
+                    child: const Icon(Icons.drag_indicator, size: 12, color: Colors.black),
+                  ),
+                ),
+              ),
+            if (isSelected)
+              Positioned(
+                right: -10,
+                top: 0,
+                bottom: 0,
+                width: 20,
+                child: GestureDetector(
+                  onHorizontalDragUpdate: (details) {
+                    _updateHatBlockEnd(index, details.delta.dx / _pixelsPerSecond);
                   },
                   child: Container(
                     decoration: BoxDecoration(
