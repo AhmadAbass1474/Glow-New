@@ -14,11 +14,10 @@ import '../services/character_offline_pack.dart';
 import '../services/resource_manager.dart';
 import '../utils/character_helper.dart';
 
-/// Offline WebView character viewer.
+/// Offline WebView character viewer for iOS and Android.
 ///
-/// - **Android:** shell from Flutter assets; GLB injected from memory/disk
-///   (Android blocks file→file XHR).
-/// - **iOS:** staged on-disk pack + direct local GLB load.
+/// Loads the HTML/JS shell from Flutter assets, then injects the GLB as
+/// binary chunks. This avoids WKWebView/Chromium file→file fetch limits.
 class MobileCharacterViewer extends StatefulWidget {
   const MobileCharacterViewer({
     super.key,
@@ -56,14 +55,11 @@ class _MobileCharacterViewerState extends State<MobileCharacterViewer>
   bool _visible = true, _sending = false;
   String? _error, _lastMessage, _queuedMessage;
   Future<Uint8List>? _modelBytesFuture;
-  String? _iosModelFileName;
   int _generation = 0;
   Duration _lastPosition = Duration.zero;
   final _clock = Stopwatch(), _startup = Stopwatch();
   final _playbackClock = Stopwatch();
   int _lastPositionSent = -1000;
-
-  bool get _isAndroid => defaultTargetPlatform == TargetPlatform.android;
 
   @override
   void initState() {
@@ -73,7 +69,6 @@ class _MobileCharacterViewerState extends State<MobileCharacterViewer>
     widget.playbackPosition?.addListener(_positionChanged);
     _clock.start();
     if (widget.isPlaying) _playbackClock.start();
-    // Overlap model byte read with WebView boot to cut time-to-first-frame.
     _modelBytesFuture = _resolveModelBytes();
     unawaited(_initialize());
     _visibilityTimer = Timer.periodic(
@@ -89,30 +84,11 @@ class _MobileCharacterViewerState extends State<MobileCharacterViewer>
       ..start();
     _booted = _ready = false;
     _lastMessage = _queuedMessage = null;
-    _iosModelFileName = null;
     try {
-      if (_isAndroid) {
-        await _bootWebView(
-          generation,
-          () => _controller!.loadFlutterAsset(CharacterOfflinePack.htmlAsset),
-        );
-        return;
-      }
-
-      final pack = CharacterOfflinePack.instance;
-      final dir = await pack.ensureReady();
-      if (!mounted || generation != _generation) return;
-      final source = CharacterHelper.getModelPath(widget.characterName);
-      if (_isRemoteOrFileSource(source)) {
-        _iosModelFileName = await pack.stageOverrideFile(
-          await _resolveCustomModelPath(source),
-        );
-      } else {
-        _iosModelFileName = CharacterOfflinePack.modelFileName;
-      }
+      // Same reliable path on iOS and Android: assets shell + byte inject.
       await _bootWebView(
         generation,
-        () => _controller!.loadFile(pack.htmlFile(dir).path),
+        () => _controller!.loadFlutterAsset(CharacterOfflinePack.htmlAsset),
       );
     } catch (error) {
       _fail(error, generation);
@@ -180,7 +156,9 @@ class _MobileCharacterViewerState extends State<MobileCharacterViewer>
       NavigationDelegate(
         onNavigationRequest: (request) {
           final url = request.url;
-          return url.startsWith('file:') || url.startsWith('about:')
+          return url.startsWith('file:') ||
+                  url.startsWith('about:') ||
+                  url.startsWith('flutter:')
               ? NavigationDecision.navigate
               : NavigationDecision.prevent;
         },
@@ -230,6 +208,8 @@ class _MobileCharacterViewerState extends State<MobileCharacterViewer>
         _fail(payload['message'] ?? 'WebGL initialization failed', generation);
       case 'sample':
         if (kDebugMode) debugPrint('Character mobile sample: $payload');
+      default:
+        break;
     }
   }
 
@@ -241,14 +221,6 @@ class _MobileCharacterViewerState extends State<MobileCharacterViewer>
       if (!mounted || generation != _generation) return;
       final state = jsonEncode(_state(seek: true));
       await controller.runJavaScript('GlowViewer.update($state);');
-
-      if (!_isAndroid && _iosModelFileName != null) {
-        await controller.runJavaScript(
-          'GlowViewer.loadLocal(${jsonEncode(_iosModelFileName)});',
-        );
-        return;
-      }
-
       final bytes = await (_modelBytesFuture ?? _resolveModelBytes());
       _modelBytesFuture = null;
       if (!mounted || generation != _generation) return;
@@ -264,8 +236,8 @@ class _MobileCharacterViewerState extends State<MobileCharacterViewer>
     int generation,
   ) async {
     await controller.runJavaScript('GlowViewer.begin(${bytes.length});');
-    const chunkSize = 1024 * 1024;
-    const batchSize = 3;
+    const chunkSize = 512 * 1024;
+    const batchSize = 2;
     final parts = <String>[];
     for (var offset = 0; offset < bytes.length; offset += chunkSize) {
       if (!mounted || generation != _generation) return;
@@ -277,6 +249,8 @@ class _MobileCharacterViewerState extends State<MobileCharacterViewer>
           'GlowViewer.appendBatch([${parts.join(',')}]);',
         );
         parts.clear();
+        // Yield so iOS WKWebView can process large scripts without janking.
+        await Future<void>.delayed(Duration.zero);
       }
     }
     if (!mounted || generation != _generation) return;
@@ -400,7 +374,6 @@ class _MobileCharacterViewerState extends State<MobileCharacterViewer>
           !_isRemoteOrFileSource(oldSource) &&
           !_isRemoteOrFileSource(newSource);
       if (sameSharedModel && _booted && _controller != null && _error == null) {
-        // Same offline GLB: only recolor — avoid tearing down the WebView.
         _sendState(seek: true);
         if (_ready) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
