@@ -28,6 +28,8 @@ class MobileCharacterViewer extends StatefulWidget {
     required this.interactive,
     required this.showSkeleton,
     this.showHat = false,
+    this.showMuscles = false,
+    this.showGlasses = false,
     this.hatColor = const Color(0xFF2C2C2E),
     this.motion,
     this.playbackPosition,
@@ -37,6 +39,8 @@ class MobileCharacterViewer extends StatefulWidget {
   final String characterName, storyText;
   final bool isPlaying, isSpeaking, interactive, showSkeleton;
   final bool showHat;
+  final bool showMuscles;
+  final bool showGlasses;
   final Color hatColor;
   final CharacterMotion? motion;
   final ValueListenable<Duration>? playbackPosition;
@@ -269,6 +273,8 @@ class _MobileCharacterViewerState extends State<MobileCharacterViewer>
       'interactive': widget.interactive,
       'skeleton': widget.showSkeleton,
       'hat': widget.showHat,
+      'muscles': widget.showMuscles,
+      'glasses': widget.showGlasses,
       'hatColor':
           '#${(widget.hatColor.toARGB32() & 0xFFFFFF).toRadixString(16).padLeft(6, '0')}',
       'visible': _visible,
@@ -398,6 +404,8 @@ class _MobileCharacterViewerState extends State<MobileCharacterViewer>
         oldWidget.isSpeaking != widget.isSpeaking ||
         oldWidget.showSkeleton != widget.showSkeleton ||
         oldWidget.showHat != widget.showHat ||
+        oldWidget.showMuscles != widget.showMuscles ||
+        oldWidget.showGlasses != widget.showGlasses ||
         oldWidget.hatColor != widget.hatColor ||
         oldWidget.interactive != widget.interactive ||
         oldWidget.playbackPosition != widget.playbackPosition) {

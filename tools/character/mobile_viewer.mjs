@@ -10,11 +10,65 @@ let active, ready = false, disposed = false, firstFrame = false, failed = false;
 let sampledFrames = 0, sampleStart = 0;
 let state = {
   motion: 'Idle', playing: true, speaking: false, visible: true, interactive: true,
-  skeleton: false, hat: true, hatColor: '#2c2c2e', originalGreen: true, color: '#22592a', position: 0,
+  skeleton: false, hat: true, hatColor: '#2c2c2e', muscles: false, glasses: false, originalGreen: true, color: '#22592a', position: 0,
 };
 const actions = new Map(), eyes = [];
 const HAT_MATERIALS = new Set(['Hat', 'HatBand', 'HatTrim', 'HatSkin']);
-const target = { value: new THREE.Color() }, strength = { value: 0 };
+const target = { value: new THREE.Color() }, strength = { value: 0 }, muscles = { value: 0 };
+const MUSCLE_GLSL = `
+vec2 glowPad(vec2 q, vec2 c, vec2 r) {
+  vec2 d = (q - c) / r;
+  float dist = length(d);
+  float body = clamp((1.0 - dist) / 0.28, 0.0, 1.0);
+  body = body * body * (3.0 - 2.0 * body);
+  float light = body * clamp(d.y, 0.0, 1.0) * 0.85;
+  float shadow = body * clamp(-d.y, 0.0, 1.0) * 0.55;
+  float band = exp(-(d.y + 0.82) * (d.y + 0.82) / 0.05) * exp(-d.x * d.x / 0.7);
+  return vec2(shadow + band * 0.55, light);
+}
+float glowSeg(vec2 p, vec2 a, vec2 b) {
+  vec2 pa = p - a;
+  vec2 ba = b - a;
+  float h = clamp(dot(pa, ba) / max(dot(ba, ba), 1e-5), 0.0, 1.0);
+  return length(pa - ba * h);
+}
+vec3 glowMuscleDraw(vec3 p, vec3 n) {
+  float cx = p.x + 0.062;
+  float front = smoothstep(0.18, 0.55, n.z) * smoothstep(0.07, 0.13, p.z);
+  float yIn = smoothstep(0.17, 0.20, p.y) * (1.0 - smoothstep(0.43, 0.47, p.y));
+  float side = 1.0 - smoothstep(0.10, 0.155, abs(cx));
+  float gate = front * yIn * side;
+  vec2 q = vec2(cx, p.y);
+  float shadow = clamp((0.007 - abs(cx)) / 0.005, 0.0, 1.0)
+    * smoothstep(0.20, 0.225, p.y) * (1.0 - smoothstep(0.41, 0.43, p.y)) * 0.75;
+  shadow += clamp((0.012 - abs(p.y - 0.350)) / 0.010, 0.0, 1.0)
+    * clamp((0.105 - abs(cx)) / 0.08, 0.0, 1.0) * 0.65;
+  shadow += clamp((0.0055 - abs(p.y - 0.308)) / 0.0045, 0.0, 1.0) * clamp((0.090 - abs(cx)) / 0.090, 0.0, 1.0) * 0.55;
+  shadow += clamp((0.0055 - abs(p.y - 0.264)) / 0.0045, 0.0, 1.0) * clamp((0.096 - abs(cx)) / 0.096, 0.0, 1.0) * 0.55;
+  shadow += clamp((0.0055 - abs(p.y - 0.222)) / 0.0045, 0.0, 1.0) * clamp((0.086 - abs(cx)) / 0.086, 0.0, 1.0) * 0.55;
+  vec2 pad = glowPad(q, vec2(-0.056, 0.400), vec2(0.050, 0.034));
+  shadow += pad.x; float light = pad.y;
+  pad = glowPad(q, vec2(0.056, 0.400), vec2(0.050, 0.034));
+  shadow += pad.x; light += pad.y;
+  pad = glowPad(q, vec2(-0.046, 0.328), vec2(0.042, 0.022));
+  shadow += pad.x; light += pad.y;
+  pad = glowPad(q, vec2(0.046, 0.328), vec2(0.042, 0.022));
+  shadow += pad.x; light += pad.y;
+  pad = glowPad(q, vec2(-0.048, 0.284), vec2(0.046, 0.022));
+  shadow += pad.x; light += pad.y;
+  pad = glowPad(q, vec2(0.048, 0.284), vec2(0.046, 0.022));
+  shadow += pad.x; light += pad.y;
+  pad = glowPad(q, vec2(-0.044, 0.242), vec2(0.042, 0.020));
+  shadow += pad.x; light += pad.y;
+  pad = glowPad(q, vec2(0.044, 0.242), vec2(0.042, 0.020));
+  shadow += pad.x; light += pad.y;
+  float boltD = glowSeg(q, vec2(-0.030, 0.426), vec2(-0.074, 0.402));
+  boltD = min(boltD, glowSeg(q, vec2(-0.074, 0.402), vec2(-0.036, 0.386)));
+  boltD = min(boltD, glowSeg(q, vec2(-0.036, 0.386), vec2(-0.080, 0.358)));
+  float bolt = clamp((0.0065 - boltD) / 0.0045, 0.0, 1.0);
+  return vec3(shadow, light, bolt) * gate;
+}
+`;
 let nextBlink = 1.8, blinkStart = -10, blinkDuration = .26, nextLook = 1.2;
 let lookX = 0, lookY = 0, gazeX = 0, gazeY = 0, squint = 0, speechBlend = 0;
 const eyeRotation = new THREE.Euler(), jawRotation = new THREE.Quaternion();
@@ -70,18 +124,25 @@ function palette(mesh, seen) {
   for (const material of [mesh.material].flat()) {
     if (!material || seen.has(material) || HAT_MATERIALS.has(material.name)) continue;
     seen.add(material);
-    material.customProgramCacheKey = () => 'glow-skin-palette-v1';
+    material.customProgramCacheKey = () => 'glow-skin-palette-v3';
     material.onBeforeCompile = shader => {
-      shader.uniforms.glowSkinTarget = target; shader.uniforms.glowSkinStrength = strength;
-      shader.vertexShader = 'attribute float _glow_skin_region;\nvarying float vGlowSkinRegion;\n' + shader.vertexShader;
-      shader.vertexShader = shader.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\nvGlowSkinRegion = _glow_skin_region;');
-      shader.fragmentShader = 'uniform vec3 glowSkinTarget;\nuniform float glowSkinStrength;\nvarying float vGlowSkinRegion;\n' + shader.fragmentShader;
+      shader.uniforms.glowSkinTarget = target;
+      shader.uniforms.glowSkinStrength = strength;
+      shader.uniforms.glowMuscles = muscles;
+      shader.vertexShader = 'attribute float _glow_skin_region;\nvarying float vGlowSkinRegion;\nvarying vec3 vGlowMuscle;\nuniform float glowMuscles;\n' + MUSCLE_GLSL + shader.vertexShader;
+      shader.vertexShader = shader.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\nvGlowSkinRegion = _glow_skin_region;\nvGlowMuscle = glowMuscleDraw(position, normal);');
+      shader.fragmentShader = 'uniform vec3 glowSkinTarget;\nuniform float glowSkinStrength;\nuniform float glowMuscles;\nvarying float vGlowSkinRegion;\nvarying vec3 vGlowMuscle;\n' + shader.fragmentShader;
       shader.fragmentShader = shader.fragmentShader.replace('#include <map_fragment>', `#include <map_fragment>
         #ifdef USE_MAP
         float greenDominance = (diffuseColor.g - max(diffuseColor.r, diffuseColor.b)) / max(diffuseColor.g, 0.0001);
         float mask = smoothstep(0.20, 0.45, greenDominance) * clamp(vGlowSkinRegion, 0.0, 1.0) * glowSkinStrength;
         float shade = dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722)) / 0.07652005545;
         diffuseColor.rgb = mix(diffuseColor.rgb, glowSkinTarget * shade, mask);
+        float muscleCream = (1.0 - smoothstep(0.08, 0.30, greenDominance)) * smoothstep(0.55, 0.80, max(diffuseColor.r, diffuseColor.g));
+        float muscleOn = muscleCream * glowMuscles;
+        diffuseColor.rgb *= mix(1.0, 0.60, clamp(vGlowMuscle.x, 0.0, 1.0) * muscleOn);
+        diffuseColor.rgb *= mix(1.0, 1.12, clamp(vGlowMuscle.y, 0.0, 1.0) * muscleOn);
+        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(1.0, 0.75, 0.08), clamp(vGlowMuscle.z, 0.0, 1.0) * muscleOn);
         #endif`);
     };
   }
@@ -92,6 +153,23 @@ function selectMotion() {
   next.reset().setEffectiveWeight(1).play();
   if (active) next.crossFadeFrom(active, .3, false);
   active = next;
+}
+function applyGlasses() {
+  if (!model) return;
+  const show = state.glasses === true;
+  model.traverse(object => {
+    for (const material of [object.material].flat().filter(Boolean)) {
+      if (material.name === 'Glasses') object.visible = show;
+    }
+  });
+}
+function hideFittedMesh() {
+  if (!model) return;
+  model.traverse(object => {
+    for (const material of [object.material].flat().filter(Boolean)) {
+      if (material.name === 'Muscles') object.visible = false;
+    }
+  });
 }
 function applyHat() {
   if (!model) return;
@@ -119,11 +197,13 @@ function applyHat() {
 function resize() {
   if (!renderer || !camera) return;
   const w = Math.max(1, innerWidth), h = Math.max(1, innerHeight);
-  // Match web sharpness more closely while keeping a safe mobile cap.
-  renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2, 1280 / Math.max(w, h)));
+  // Supersampled buffer plus MSAA. The long side stays at 3072 so the
+  // silhouette stays sharp without an 8K framebuffer that stalls the GPU.
+  const longSide = Math.max(w, h);
+  renderer.setPixelRatio(Math.max(1, Math.min(devicePixelRatio || 1, 3, 3072 / longSide)));
   renderer.setSize(w, h, false);
   camera.aspect = w / h; camera.updateProjectionMatrix();
-  const distance = Math.max(3.5, (model?.userData.frameWidth ?? 3.5) / camera.aspect) / (2 * Math.tan(38 * Math.PI / 360)) * 1.26;
+  const distance = Math.max(3.5, (model?.userData.frameWidth ?? 3.5) / camera.aspect) / (2 * Math.tan(38 * Math.PI / 360)) * 1.02;
   camera.position.set(.32, 2.06, distance); controls?.update();
   draw();
 }
@@ -188,11 +268,11 @@ async function _mountGltf(data) {
     for (const material of [object.material].flat().filter(Boolean)) {
       if (material.map) {
         material.map.colorSpace = THREE.SRGBColorSpace;
-        material.map.anisotropy = Math.min(8, maxAniso);
+        material.map.anisotropy = Math.min(16, maxAniso);
         material.map.needsUpdate = true;
       }
       if (material.normalMap) {
-        material.normalMap.anisotropy = Math.min(8, maxAniso);
+        material.normalMap.anisotropy = Math.min(16, maxAniso);
         material.normalMap.needsUpdate = true;
       }
       material.needsUpdate = true;
@@ -208,6 +288,8 @@ async function _mountGltf(data) {
   mixer = new THREE.AnimationMixer(model);
   for (const clip of data.animations) actions.set(clip.name, mixer.clipAction(clip));
   applyHat();
+  applyGlasses();
+  hideFittedMesh();
   update(state); selectMotion(); mixer.update(0); ready = true; send('loaded'); resize(); schedule();
 }
 async function loadLocal(fileName) {
@@ -246,12 +328,16 @@ function update(next) {
   const wasSpeaking = state.speaking;
   const seek = next.seek === true;
   const hatChanged = next.hat !== undefined || next.hatColor !== undefined || next.color !== undefined;
+  const glassesChanged = next.glasses !== undefined;
   state = { ...state, ...next };
   target.value.set(state.color); strength.value = state.originalGreen ? 0 : 1;
+  muscles.value = state.muscles ? 1 : 0;
+  if (next.muscles !== undefined || next.seek === true) hideFittedMesh();
   if (controls) controls.enabled = state.interactive;
   if (state.skeleton && model && !skeleton) { skeleton = new THREE.SkeletonHelper(model); scene.add(skeleton); }
   if (skeleton) skeleton.visible = state.skeleton;
   if (hatChanged || next.seek === true) applyHat();
+  if (glassesChanged || next.seek === true) applyGlasses();
   if (mixer) {
     selectMotion();
     if (seek) { mixer.stopAllAction(); active = null; selectMotion(); if (active) active.time = state.position % active.getClip().duration; mixer.update(0); }

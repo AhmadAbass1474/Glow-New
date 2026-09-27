@@ -37,6 +37,8 @@ class _CharacterStudioScreenState extends State<CharacterStudioScreen> {
   var _speaking = false;
   var _skeleton = false;
   var _showHat = true;
+  var _showGlasses = true;
+  var _showMuscles = true;
   var _hatColor = const Color(0xFF2C2C2E);
 
   static const _hatColors = <Color>[
@@ -219,6 +221,8 @@ class _CharacterStudioScreenState extends State<CharacterStudioScreen> {
                 showSkeleton: _skeleton,
                 showHat: _showHat,
                 hatColor: _hatColor,
+                showMuscles: _showMuscles,
+                showGlasses: _showGlasses,
               ),
               PositionedDirectional(
                 top: 18,
@@ -526,6 +530,36 @@ class _CharacterStudioScreenState extends State<CharacterStudioScreen> {
                 title: const Text(
                   'إظهار العظام',
                   style: TextStyle(color: _ink, fontSize: 13),
+                ),
+              ),
+              const SizedBox(height: 8),
+              SwitchListTile.adaptive(
+                value: _showMuscles,
+                onChanged: (value) => setState(() => _showMuscles = value),
+                contentPadding: EdgeInsets.zero,
+                activeTrackColor: _accent,
+                title: const Text(
+                  'عضلات البطن',
+                  style: TextStyle(color: _ink, fontSize: 13),
+                ),
+                subtitle: const Text(
+                  'صدر وبطن على الجسم، وتقدر تشيلها',
+                  style: TextStyle(color: _muted, fontSize: 11),
+                ),
+              ),
+              const SizedBox(height: 8),
+              SwitchListTile.adaptive(
+                value: _showGlasses,
+                onChanged: (value) => setState(() => _showGlasses = value),
+                contentPadding: EdgeInsets.zero,
+                activeTrackColor: _accent,
+                title: const Text(
+                  'النظارة',
+                  style: TextStyle(color: _ink, fontSize: 13),
+                ),
+                subtitle: const Text(
+                  'فوق العينين، وتقدر تشيلها',
+                  style: TextStyle(color: _muted, fontSize: 11),
                 ),
               ),
               const SizedBox(height: 8),

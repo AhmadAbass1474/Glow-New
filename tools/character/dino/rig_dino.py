@@ -37,6 +37,12 @@ LEG_X = {'Left': .050, 'Right': M(.050)}
 HIP_Y, KNEE_Y, ANKLE_Y = .150, .095, .045
 # Hanging arms: rotation from the sculpted raised pose about the view axis.
 ARM_DOWN = 1.40
+# The belly's widest point is 0.169 from the midline and the shoulder bone
+# sits at 0.140, so a straight drop drives the paw through the body. Idle
+# keeps that shoulder pose, folds the forearm 0.18 rad, and rolls the paw
+# 0.90 rad so the open face points back. Both paws stay about 6cm clear.
+IDLE_FOREARM_DROP = 0.18
+IDLE_HAND_TWIST = -0.90
 LIMBS = ['LeftUpperArm', 'RightUpperArm', 'LeftUpperLeg', 'RightUpperLeg']
 
 
@@ -121,6 +127,103 @@ def limb_zones(points, lay):
     return zones
 
 
+def transfer_forearm_shell(joints, weights, positions, lay, order):
+    """Move the outer arm from the shoulder bone onto the forearm bone.
+
+    The paw can then fold down in Idle without dragging the upper arm into
+    the flank. Vertices on the shoulder stay where they are.
+    """
+    joints = joints.copy()
+    weights = weights.copy()
+    for side in ('Left', 'Right'):
+        shoulder = np.array(lay[f'{side}UpperArm'], dtype=np.float64)
+        hand = np.array(lay[f'{side}Hand'], dtype=np.float64)
+        axis = hand - shoulder
+        axis /= np.linalg.norm(axis)
+        upper = order.index(f'{side}UpperArm')
+        fore = order.index(f'{side}ForeArm')
+        along = (positions - shoulder) @ axis
+        share = smooth(0.155, 0.195, along)
+        for index in np.flatnonzero(share > 1e-4):
+            slots = joints[index]
+            influence = weights[index]
+            hit = np.flatnonzero(slots == upper)
+            if len(hit) == 0 or influence[hit[0]] <= 0:
+                continue
+            moved = float(influence[hit[0]] * share[index])
+            influence[hit[0]] -= moved
+            fore_slot = np.flatnonzero(slots == fore)
+            if len(fore_slot):
+                influence[fore_slot[0]] += moved
+            else:
+                empty = np.flatnonzero(influence <= 1e-6)
+                if len(empty) == 0:
+                    continue
+                slots[empty[0]] = fore
+                influence[empty[0]] = moved
+            total = float(influence.sum())
+            if total > 0:
+                influence /= total
+    return joints, weights
+
+
+def forearm_quat(side):
+    sign = 1.0 if side == 'Left' else -1.0
+    return np.array(quat(0.0, 0.0, -sign * IDLE_FOREARM_DROP))
+
+
+def hand_twist_quat(side, lay):
+    """Roll the paw around the arm. Negative twist turns the open face back."""
+    shoulder = np.array(lay[f'{side}UpperArm'], dtype=np.float64)
+    tip = np.array(lay[f'{side}Hand'], dtype=np.float64)
+    axis = tip - shoulder
+    axis /= np.linalg.norm(axis)
+    sign = 1.0 if side == 'Left' else -1.0
+    angle = -sign * IDLE_HAND_TWIST
+    half = math.sin(angle / 2.0)
+    return np.array([axis[0] * half, axis[1] * half, axis[2] * half, math.cos(angle / 2.0)])
+
+
+def transfer_hand_shell(joints, weights, positions, lay, order):
+    """Move the paw from the forearm bone onto the hand bone.
+
+    Idle can then roll the palm without twisting the upper arm. The wrist
+    keeps a short blend so the paw does not tear off the forearm.
+    """
+    joints = joints.copy()
+    weights = weights.copy()
+    for side in ('Left', 'Right'):
+        shoulder = np.array(lay[f'{side}UpperArm'], dtype=np.float64)
+        hand = np.array(lay[f'{side}Hand'], dtype=np.float64)
+        axis = hand - shoulder
+        axis /= np.linalg.norm(axis)
+        fore = order.index(f'{side}ForeArm')
+        palm = order.index(f'{side}Hand')
+        along = (positions - shoulder) @ axis
+        share = smooth(0.172, 0.192, along)
+        for index in np.flatnonzero(share > 1e-4):
+            slots = joints[index]
+            influence = weights[index]
+            hit = np.flatnonzero(slots == fore)
+            if len(hit) == 0 or influence[hit[0]] <= 0:
+                continue
+            moved = float(influence[hit[0]] * share[index])
+            influence[hit[0]] -= moved
+            hand_slot = np.flatnonzero(slots == palm)
+            if len(hand_slot):
+                influence[hand_slot[0]] += moved
+            else:
+                empty = np.flatnonzero(influence <= 1e-6)
+                if len(empty) == 0:
+                    continue
+                slots[empty[0]] = palm
+                influence[empty[0]] = moved
+            total = float(influence.sum())
+            if total > 0:
+                influence /= total
+    return joints, weights
+
+
 def solve_limb_weights(points, faces, lay):
     adjacency = graph(len(points), faces)
     zones = limb_zones(points, lay)
@@ -183,13 +286,20 @@ def build_animations(gltf, binary, bones, lay):
         gltf.animations.append(anim)
 
     both = lambda f: {'LeftUpperArm': lambda u: arm('Left', *f(u)), 'RightUpperArm': lambda u: arm('Right', *f(u))}
+    idle_arms = {
+        **both(lambda u: (.04, 0)),
+        'LeftForeArm': lambda u: forearm_quat('Left'),
+        'RightForeArm': lambda u: forearm_quat('Right'),
+        'LeftHand': lambda u: hand_twist_quat('Left', lay),
+        'RightHand': lambda u: hand_twist_quat('Right', lay),
+    }
     # Happy/Laugh open wide; Sad keeps the jaw shut.
     open_smile = lambda u: e(.22, 0, 0)
     happy = lambda u: e(.52, 0, 0)
     talk = lambda u: e(.08 + .30 * (math.sin(math.pi * 4 * u) ** 2), 0, 0)
     laugh = lambda u: e(.20 + .26 * (.5 - .5 * math.cos(tau * 2 * u)), 0, 0)
     closed = lambda u: e(0, 0, 0)
-    clip('Idle', 4.0, both(lambda u: (.04+.03*sin(tau*u), 0)), jaw=closed)
+    clip('Idle', 4.0, idle_arms, jaw=closed)
     clip('Talk', 2.0, {
         'LeftUpperArm': lambda u: arm('Left', .35+.10*sin(tau*2*u), -.35-.10*sin(tau*2*u)),
         'RightUpperArm': lambda u: arm('Right', .10, -.08),
@@ -255,6 +365,8 @@ def main(source, output):
     triangles = mouth['indices']
     joints = mouth['joints']
     weights = mouth['weights']
+    joints, weights = transfer_forearm_shell(joints, weights, positions, lay, order)
+    joints, weights = transfer_hand_shell(joints, weights, positions, lay, order)
     lay['Jaw'] = mouth['anchors']['Jaw']
     # Refresh the jaw node translation after the measured hinge is known.
     jaw_node = gltf.nodes[bones['Jaw']]

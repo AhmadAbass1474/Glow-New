@@ -38,12 +38,15 @@ class _StoryTimelineEditorState extends State<StoryTimelineEditor> {
   List<StoryBlock> _blocks = [];
   List<StoryMotionBlock> _motionBlocks = [];
   List<StoryHatBlock> _hatBlocks = [];
+  List<StoryGlassesBlock> _glassesBlocks = [];
   bool _isLoading = true;
   
   double _pixelsPerSecond = 80.0;
-  final double _blockHeight = 50.0;
-  final double _trackHeight = 60.0;
-  final double _waveformHeight = 40.0;
+  final double _paletteChipHeight = 32.0;
+  final double _trackHeight = 28.0;
+  final double _waveformHeight = 26.0;
+  final double _laneGap = 2.0;
+  final double _rulerSpace = 4.0;
 
   static const _hatPaletteColors = <Color>[
     Color(0xFF2C2C2E),
@@ -59,11 +62,15 @@ class _StoryTimelineEditorState extends State<StoryTimelineEditor> {
   final GlobalKey _trackKey = GlobalKey();
   final GlobalKey _motionTrackKey = GlobalKey();
   final GlobalKey _hatTrackKey = GlobalKey();
+  final GlobalKey _glassesTrackKey = GlobalKey();
   final ScrollController _scrollController = ScrollController();
   
   int? _selectedBlockIndex;
   int? _selectedMotionBlockIndex;
   int? _selectedHatBlockIndex;
+  int? _selectedGlassesBlockIndex;
+  int _paletteCategory = 0;
+  static const _paletteCategoryNames = ['الشخصية', 'الحركة', 'القبعة', 'النظارة'];
   String? _lastPreviewCharacter;
   String? _lastPreviewMotion;
 
@@ -80,6 +87,9 @@ class _StoryTimelineEditorState extends State<StoryTimelineEditor> {
       }
       if (widget.initialTimeline!.hatBlocks.isNotEmpty) {
         _hatBlocks = List.from(widget.initialTimeline!.hatBlocks);
+      }
+      if (widget.initialTimeline!.glassesBlocks.isNotEmpty) {
+        _glassesBlocks = List.from(widget.initialTimeline!.glassesBlocks);
       }
     }
     _loadAudioDuration();
@@ -154,12 +164,43 @@ class _StoryTimelineEditorState extends State<StoryTimelineEditor> {
     _blocks.sort((a, b) => a.startTime.compareTo(b.startTime));
     _motionBlocks.sort((a, b) => a.startTime.compareTo(b.startTime));
     _hatBlocks.sort((a, b) => a.startTime.compareTo(b.startTime));
+    _glassesBlocks.sort((a, b) => a.startTime.compareTo(b.startTime));
     widget.onTimelineChanged(StoryTimeline(
       blocks: _blocks,
       motionBlocks: _motionBlocks,
       hatBlocks: _hatBlocks,
+      glassesBlocks: _glassesBlocks,
       totalDuration: _totalDuration.inMilliseconds / 1000.0,
     ));
+  }
+
+  double _laneBlockHeight(bool selected) => selected ? 32 : _trackHeight;
+
+  double _laneBlockTop(bool selected) => selected ? (_trackHeight - 32) / 2 : 0;
+
+  Widget _trackHint(String text) {
+    return IgnorePointer(
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: Padding(
+          padding: const EdgeInsets.only(left: 12),
+          child: Directionality(
+            textDirection: TextDirection.rtl,
+            child: Text(
+              text,
+              maxLines: 1,
+              overflow: TextOverflow.fade,
+              softWrap: false,
+              style: const TextStyle(
+                color: Color(0xFF94A3B8),
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   String _formatTime(double seconds) {
@@ -306,6 +347,12 @@ class _StoryTimelineEditorState extends State<StoryTimelineEditor> {
         _selectedHatBlockIndex = null;
       });
       _notifyChanged();
+    } else if (_selectedGlassesBlockIndex != null) {
+      setState(() {
+        _glassesBlocks.removeAt(_selectedGlassesBlockIndex!);
+        _selectedGlassesBlockIndex = null;
+      });
+      _notifyChanged();
     }
   }
 
@@ -328,6 +375,13 @@ class _StoryTimelineEditorState extends State<StoryTimelineEditor> {
       if (time >= b.startTime && time <= b.endTime) return b;
     }
     return null;
+  }
+
+  bool _glassesOnAt(double time) {
+    for (var b in _glassesBlocks) {
+      if (time >= b.startTime && time <= b.endTime) return true;
+    }
+    return false;
   }
 
   void _addMotionBlockAtTime(String motionId, double timeInSeconds) {
@@ -368,6 +422,7 @@ class _StoryTimelineEditorState extends State<StoryTimelineEditor> {
       _selectedMotionBlockIndex = _motionBlocks.indexWhere((b) => b.startTime == timeInSeconds);
       _selectedBlockIndex = null;
       _selectedHatBlockIndex = null;
+      _selectedGlassesBlockIndex = null;
     });
     _notifyChanged();
   }
@@ -537,6 +592,89 @@ class _StoryTimelineEditorState extends State<StoryTimelineEditor> {
     });
     _notifyChanged();
   }
+
+  void _addGlassesBlockAtTime(double timeInSeconds) {
+    final totalSeconds = _totalDuration.inMilliseconds / 1000.0;
+    if (totalSeconds == 0) return;
+    if (timeInSeconds < 0) timeInSeconds = 0;
+    double end = timeInSeconds + 3.0;
+    if (end > totalSeconds) end = totalSeconds;
+
+    final updated = <StoryGlassesBlock>[];
+    for (var b in _glassesBlocks) {
+      if (b.endTime <= timeInSeconds || b.startTime >= end) {
+        updated.add(b);
+      } else if (b.startTime < timeInSeconds && b.endTime > end) {
+        updated.add(StoryGlassesBlock(startTime: b.startTime, endTime: timeInSeconds));
+        updated.add(StoryGlassesBlock(startTime: end, endTime: b.endTime));
+      } else if (b.startTime < timeInSeconds && b.endTime <= end) {
+        updated.add(StoryGlassesBlock(startTime: b.startTime, endTime: timeInSeconds));
+      } else if (b.startTime >= timeInSeconds && b.endTime > end) {
+        updated.add(StoryGlassesBlock(startTime: end, endTime: b.endTime));
+      }
+    }
+    updated.add(StoryGlassesBlock(startTime: timeInSeconds, endTime: end));
+    setState(() {
+      _glassesBlocks = updated;
+      _selectedGlassesBlockIndex = _glassesBlocks.indexWhere((b) => b.startTime == timeInSeconds);
+      _selectedBlockIndex = null;
+      _selectedMotionBlockIndex = null;
+      _selectedHatBlockIndex = null;
+    });
+    _notifyChanged();
+  }
+
+  void _updateGlassesBlockStart(int index, double deltaSeconds) {
+    final block = _glassesBlocks[index];
+    double newStart = block.startTime + deltaSeconds;
+    if (newStart < 0) newStart = 0;
+    if (newStart > block.endTime - 0.5) newStart = block.endTime - 0.5;
+    if (index > 0 && newStart < _glassesBlocks[index - 1].endTime) {
+      newStart = _glassesBlocks[index - 1].endTime;
+    }
+    setState(() {
+      _glassesBlocks[index] = StoryGlassesBlock(startTime: newStart, endTime: block.endTime);
+    });
+    _notifyChanged();
+  }
+
+  void _updateGlassesBlockEnd(int index, double deltaSeconds) {
+    final block = _glassesBlocks[index];
+    double newEnd = block.endTime + deltaSeconds;
+    final totalSeconds = _totalDuration.inMilliseconds / 1000.0;
+    if (newEnd > totalSeconds) newEnd = totalSeconds;
+    if (newEnd < block.startTime + 0.5) newEnd = block.startTime + 0.5;
+    if (index < _glassesBlocks.length - 1 && newEnd > _glassesBlocks[index + 1].startTime) {
+      newEnd = _glassesBlocks[index + 1].startTime;
+    }
+    setState(() {
+      _glassesBlocks[index] = StoryGlassesBlock(startTime: block.startTime, endTime: newEnd);
+    });
+    _notifyChanged();
+  }
+
+  void _moveGlassesBlock(int index, double deltaSeconds) {
+    final block = _glassesBlocks[index];
+    final duration = block.endTime - block.startTime;
+    double newStart = block.startTime + deltaSeconds;
+    if (newStart < 0) newStart = 0;
+    final totalSeconds = _totalDuration.inMilliseconds / 1000.0;
+    if (newStart + duration > totalSeconds) newStart = totalSeconds - duration;
+    if (index > 0 && newStart < _glassesBlocks[index - 1].endTime) {
+      newStart = _glassesBlocks[index - 1].endTime;
+    }
+    if (index < _glassesBlocks.length - 1 &&
+        (newStart + duration) > _glassesBlocks[index + 1].startTime) {
+      newStart = _glassesBlocks[index + 1].startTime - duration;
+    }
+    setState(() {
+      _glassesBlocks[index] = StoryGlassesBlock(
+        startTime: newStart,
+        endTime: newStart + duration,
+      );
+    });
+    _notifyChanged();
+  }
   
   void _duplicateBlock() {
     if (_selectedBlockIndex != null) {
@@ -567,6 +705,11 @@ class _StoryTimelineEditorState extends State<StoryTimelineEditor> {
 
     final totalSeconds = _totalDuration.inMilliseconds / 1000.0;
     final trackWidth = totalSeconds * _pixelsPerSecond;
+    final characterTop = _rulerSpace + _waveformHeight + _laneGap;
+    final motionTop = characterTop + _trackHeight + _laneGap;
+    final hatTop = motionTop + _trackHeight + _laneGap;
+    final glassesTop = hatTop + _trackHeight + _laneGap;
+    final timelineHeight = glassesTop + _trackHeight + 10;
     final currentTime = (widget.positionNotifier?.value.inMilliseconds ?? 0) / 1000.0;
 
     // Dark Mode Theme Wrapper
@@ -594,58 +737,54 @@ class _StoryTimelineEditorState extends State<StoryTimelineEditor> {
                   children: [
                     // Embedded 3D Viewer
                     Container(
-                      height: 200,
+                      height: 260,
                       decoration: BoxDecoration(
                         color: Colors.white,
                         borderRadius: BorderRadius.circular(AppColors.border_radius),
                         border: BoxBorder.all(color: AppColors.inputBorder)
                       ),
                       clipBehavior: Clip.antiAlias,
-                      child: _getActiveCharacterAt(currentTime) != null 
-                          ? SmartCharacterViewer(
-                              characterName: _getActiveCharacterAt(currentTime)!,
-                              isPlaying: widget.isPlaying,
-                              isSpeaking: widget.isPlaying && widget.audioFile.existsSync(),
-                              playbackPosition: widget.positionNotifier,
-                              motion: _getActiveMotionAt(currentTime) != null 
-                                  ? CharacterMotion.values.firstWhere((m) => m.name == _getActiveMotionAt(currentTime)!, orElse: () => CharacterMotion.idle) 
-                                  : null,
-                              showHat: _getActiveHatAt(currentTime) != null,
-                              hatColor: _getActiveHatAt(currentTime)?.color ?? const Color(0xFF2C2C2E),
-                            )
-                          : const Center(
+                      child: Stack(
+                        children: [
+                          Positioned.fill(
+                            child: _getActiveCharacterAt(currentTime) != null
+                                ? SmartCharacterViewer(
+                                    characterName: _getActiveCharacterAt(currentTime)!,
+                                    isPlaying: widget.isPlaying,
+                                    isSpeaking: widget.isPlaying && widget.audioFile.existsSync(),
+                                    playbackPosition: widget.positionNotifier,
+                                    motion: _getActiveMotionAt(currentTime) != null
+                                        ? CharacterMotion.values.firstWhere((m) => m.name == _getActiveMotionAt(currentTime)!, orElse: () => CharacterMotion.idle)
+                                        : null,
+                                    showHat: _getActiveHatAt(currentTime) != null,
+                                    hatColor: _getActiveHatAt(currentTime)?.color ?? const Color(0xFF2C2C2E),
+                                    showGlasses: _glassesOnAt(currentTime),
+                                  )
+                                : const Center(
+                                    child: Text(
+                                      'لا توجد شخصية في هذا الوقت',
+                                      style: TextStyle(color: Colors.black, fontSize: 14),
+                                    ),
+                                  ),
+                          ),
+                          Positioned(
+                            bottom: 8,
+                            left: 8,
+                            child: Container(
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(AppColors.border_radius),
+                                border: Border.all(color: AppColors.inputBorder),
+                              ),
+                              padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 8),
                               child: Text(
-                                'لا توجد شخصية في هذا الوقت',
-                                style: TextStyle(color: Colors.black, fontSize: 14),
+                                '${_formatTime(currentTime)} / ${_formatTime(totalSeconds)}',
+                                style: const TextStyle(color: Colors.black, fontSize: 12),
                               ),
                             ),
-                    ),
-                    const SizedBox(height: 10),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Row(
-                          children: [
-                            IconButton(
-                              icon: const Icon(Icons.zoom_out, color: Colors.black, size: 20),
-                              onPressed: () => _zoom(0.8),
-                              constraints: const BoxConstraints(),
-                              padding: const EdgeInsets.symmetric(horizontal: 8),
-                            ),
-                            IconButton(
-                              icon: const Icon(Icons.zoom_in, color: Colors.black, size: 20),
-                              onPressed: () => _zoom(1.2),
-                              constraints: const BoxConstraints(),
-                              padding: const EdgeInsets.symmetric(horizontal: 8),
-                            ),
-                            const SizedBox(width: 8),
-                            Text(
-                              '${_formatTime(currentTime)} / ${_formatTime(totalSeconds)}',
-                              style: const TextStyle(color: Colors.black, fontSize: 12),
-                            ),
-                          ],
-                        ),
-                      ],
+                          ),
+                        ],
+                      ),
                     ),
                     const SizedBox(height: 10),
                     Container(
@@ -655,149 +794,203 @@ class _StoryTimelineEditorState extends State<StoryTimelineEditor> {
                         borderRadius: BorderRadius.circular(AppColors.border_radius),
                         border: Border.all(color: AppColors.inputBorder),
                       ),
-                      child: Column(
+                      child: Directionality(
+                        textDirection: TextDirection.rtl,
+                        child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          SizedBox(
-                            height: 50,
-                            child: ListView(
-                              scrollDirection: Axis.horizontal,
-                              children: CharacterHelper.characters.keys.map((key) {
-                                return Padding(
-                                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 10),
-                                  child: Draggable<String>(
-                                    data: key,
-                                    feedback: Material(
-                                      color: Colors.transparent,
-                                      child: Container(
-                                        width: 80,
-                                        height: _blockHeight,
-                                        decoration: BoxDecoration(
-                                          color: CharacterHelper.getColor(key).withOpacity(0.8),
-                                          borderRadius: BorderRadius.circular(AppColors.border_radius),
-                                        ),
-                                        child: Center(
-                                          child: Text(
-                                            CharacterHelper.getCleanName(key),
-                                            style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold),
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                    childWhenDragging: Opacity(
-                                      opacity: 0.3,
-                                      child: _buildPaletteItem(key),
-                                    ),
-                                    child: _buildPaletteItem(key),
-                                  ),
-                                );
-                              }).toList(),
-                            ),
-                          ),
-                          const Divider(height: 1, color: AppColors.inputBorder),
-                          SizedBox(
-                            height: 50,
-                            child: ListView(
-                              scrollDirection: Axis.horizontal,
-                              children: CharacterMotion.values.map((motion) {
-                                final isSelected = _selectedMotionBlockIndex != null && _motionBlocks.isNotEmpty && _selectedMotionBlockIndex! < _motionBlocks.length && _motionBlocks[_selectedMotionBlockIndex!].motionId == motion.name;
-                                return Padding(
-                                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 10),
-                                  child: Draggable<String>(
-                                    data: motion.name,
-                                    feedback: Material(
-                                      color: Colors.transparent,
-                                      child: Container(
-                                        width: 80,
-                                        height: _blockHeight,
-                                        decoration: BoxDecoration(
-                                          color: Colors.white, 
-                                          borderRadius: BorderRadius.circular(AppColors.border_radius),
-                                          border: Border.all(color: AppColors.inputBorder),
-                                        ),
-                                        child: Center(child: Text(motion.arabicLabel, style: const TextStyle(color: Colors.black87, fontWeight: FontWeight.bold))),
-                                      ),
-                                    ),
-                                    childWhenDragging: Opacity(
-                                      opacity: 0.3,
-                                      child: Container(
-                                        width: 80,
-                                        height: _blockHeight,
-                                        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(AppColors.border_radius), border: Border.all(color: AppColors.inputBorder)),
-                                        child: Center(child: Text(motion.arabicLabel, style: const TextStyle(color: Colors.black87, fontWeight: FontWeight.bold))),
-                                      ),
-                                    ),
-                                    child: Container(
-                                      width: 80,
-                                      height: _blockHeight,
-                                      decoration: BoxDecoration(
-                                        color: isSelected ? Colors.teal.shade300 : Colors.white, 
-                                        borderRadius: BorderRadius.circular(AppColors.border_radius), 
-                                        border: Border.all(color: isSelected ? Colors.teal.shade300 : AppColors.inputBorder)
-                                      ),
-                                      child: Center(child: Text(motion.arabicLabel, style: TextStyle(color: isSelected ? Colors.white : Colors.black87, fontWeight: FontWeight.bold))),
-                                    ),
-                                  ),
-                                );
-                              }).toList(),
-                            ),
-                          ),
-                          const Divider(height: 1, color: AppColors.inputBorder),
-                          SizedBox(
-                            height: 50,
-                            child: ListView(
-                              scrollDirection: Axis.horizontal,
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(6, 4, 6, 2),
+                            child: Row(
                               children: [
-                                const Padding(
-                                  padding: EdgeInsets.symmetric(horizontal: 8, vertical: 14),
-                                  child: Text(
-                                    'قبعة',
-                                    style: TextStyle(
-                                      color: Colors.black54,
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                ),
-                                ..._hatPaletteColors.map((color) {
-                                  final dragData = StoryHatBlock.dragDataFor(color);
-                                  final selectedHex = _selectedHatBlockIndex != null &&
-                                          _selectedHatBlockIndex! < _hatBlocks.length
-                                      ? _hatBlocks[_selectedHatBlockIndex!].colorHex.toLowerCase()
-                                      : null;
-                                  final isSelected = selectedHex ==
-                                      ((color.toARGB32() & 0xFFFFFF)
-                                          .toRadixString(16)
-                                          .padLeft(6, '0'));
-                                  return Padding(
-                                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 10),
-                                    child: Draggable<String>(
-                                      data: dragData,
-                                      feedback: Material(
-                                        color: Colors.transparent,
+                                for (var i = 0; i < _paletteCategoryNames.length; i++)
+                                  Expanded(
+                                    child: Padding(
+                                      padding: const EdgeInsets.symmetric(horizontal: 3),
+                                      child: GestureDetector(
+                                        onTap: () => setState(() => _paletteCategory = i),
                                         child: Container(
-                                          width: 48,
-                                          height: _blockHeight,
+                                          alignment: Alignment.center,
+                                          padding: const EdgeInsets.symmetric(vertical: 4),
                                           decoration: BoxDecoration(
-                                            color: color,
+                                            color: _paletteCategory == i
+                                                ? AppColors.secondary
+                                                : AppColors.background,
                                             borderRadius: BorderRadius.circular(AppColors.border_radius),
-                                            border: Border.all(color: Colors.black26),
+                                            border: Border.all(
+                                              color: _paletteCategory == i
+                                                  ? AppColors.secondary
+                                                  : AppColors.inputBorder,
+                                            ),
                                           ),
-                                          child: const Icon(Icons.face_retouching_natural, color: Colors.white70, size: 22),
+                                          child: Text(
+                                            _paletteCategoryNames[i],
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: TextStyle(
+                                              color: _paletteCategory == i
+                                                  ? Colors.white
+                                                  : AppColors.secondary,
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.w700,
+                                            ),
+                                          ),
                                         ),
                                       ),
-                                      childWhenDragging: Opacity(
-                                        opacity: 0.3,
-                                        child: _buildHatPaletteItem(color, false),
-                                      ),
-                                      child: _buildHatPaletteItem(color, isSelected),
                                     ),
-                                  );
-                                }),
+                                  ),
                               ],
                             ),
                           ),
+                          if (_paletteCategory == 0)
+                          _PaletteLane(
+                            key: const ValueKey('character'),
+                            labeled: false,
+                            title: 'الشخصية',
+                            children: CharacterHelper.characters.keys.map((key) {
+                              return Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                                child: Draggable<String>(
+                                  data: key,
+                                  feedback: Material(
+                                    color: Colors.transparent,
+                                    child: Container(
+                                      width: 72,
+                                      height: _paletteChipHeight,
+                                      decoration: BoxDecoration(
+                                        color: CharacterHelper.getColor(key).withOpacity(0.8),
+                                        borderRadius: BorderRadius.circular(AppColors.border_radius),
+                                      ),
+                                      child: Center(
+                                        child: Text(
+                                          CharacterHelper.getCleanName(key),
+                                          style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                  childWhenDragging: Opacity(
+                                    opacity: 0.3,
+                                    child: _buildPaletteItem(key),
+                                  ),
+                                  child: _buildPaletteItem(key),
+                                ),
+                              );
+                            }).toList(),
+                          ),
+                          if (_paletteCategory == 1)
+                          _PaletteLane(
+                            key: const ValueKey('motion'),
+                            labeled: false,
+                            title: 'الحركة',
+                            children: CharacterMotion.values.map((motion) {
+                              final isSelected = _selectedMotionBlockIndex != null && _motionBlocks.isNotEmpty && _selectedMotionBlockIndex! < _motionBlocks.length && _motionBlocks[_selectedMotionBlockIndex!].motionId == motion.name;
+                              return Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                                child: Draggable<String>(
+                                  data: motion.name,
+                                  feedback: Material(
+                                    color: Colors.transparent,
+                                    child: Container(
+                                      width: 72,
+                                      height: _paletteChipHeight,
+                                      decoration: BoxDecoration(
+                                        color: Colors.white,
+                                        borderRadius: BorderRadius.circular(AppColors.border_radius),
+                                        border: Border.all(color: AppColors.inputBorder),
+                                      ),
+                                      child: Center(child: Text(motion.arabicLabel, style: const TextStyle(color: Colors.black87, fontWeight: FontWeight.bold))),
+                                    ),
+                                  ),
+                                  childWhenDragging: Opacity(
+                                    opacity: 0.3,
+                                    child: Container(
+                                      width: 72,
+                                      height: _paletteChipHeight,
+                                      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(AppColors.border_radius), border: Border.all(color: AppColors.inputBorder)),
+                                      child: Center(child: Text(motion.arabicLabel, style: const TextStyle(color: Colors.black87, fontWeight: FontWeight.bold))),
+                                    ),
+                                  ),
+                                  child: Container(
+                                    width: 72,
+                                    height: _paletteChipHeight,
+                                    decoration: BoxDecoration(
+                                      color: isSelected ? Colors.teal.shade300 : Colors.white,
+                                      borderRadius: BorderRadius.circular(AppColors.border_radius),
+                                      border: Border.all(color: isSelected ? Colors.teal.shade300 : AppColors.inputBorder),
+                                    ),
+                                    child: Center(child: Text(motion.arabicLabel, style: TextStyle(color: isSelected ? Colors.white : Colors.black87, fontWeight: FontWeight.bold))),
+                                  ),
+                                ),
+                              );
+                            }).toList(),
+                          ),
+                          if (_paletteCategory == 2)
+                          _PaletteLane(
+                            key: const ValueKey('hat'),
+                            labeled: false,
+                            title: 'القبعة',
+                            children: _hatPaletteColors.map((color) {
+                              final dragData = StoryHatBlock.dragDataFor(color);
+                              final selectedHex = _selectedHatBlockIndex != null &&
+                                      _selectedHatBlockIndex! < _hatBlocks.length
+                                  ? _hatBlocks[_selectedHatBlockIndex!].colorHex.toLowerCase()
+                                  : null;
+                              final isSelected = selectedHex ==
+                                  ((color.toARGB32() & 0xFFFFFF)
+                                      .toRadixString(16)
+                                      .padLeft(6, '0'));
+                              return Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                                child: Draggable<String>(
+                                  data: dragData,
+                                  feedback: Material(
+                                    color: Colors.transparent,
+                                    child: Container(
+                                      width: 36,
+                                      height: _paletteChipHeight,
+                                      decoration: BoxDecoration(
+                                        color: color,
+                                        borderRadius: BorderRadius.circular(AppColors.border_radius),
+                                        border: Border.all(color: Colors.black26),
+                                      ),
+                                      child: const Icon(Icons.face_retouching_natural, color: Colors.white70, size: 22),
+                                    ),
+                                  ),
+                                  childWhenDragging: Opacity(
+                                    opacity: 0.3,
+                                    child: _buildHatPaletteItem(color, false),
+                                  ),
+                                  child: _buildHatPaletteItem(color, isSelected),
+                                ),
+                              );
+                            }).toList(),
+                          ),
+                          if (_paletteCategory == 3)
+                          _PaletteLane(
+                            key: const ValueKey('glasses'),
+                            labeled: false,
+                            title: 'النظارة',
+                            children: [
+                              Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                                child: Draggable<String>(
+                                  data: StoryGlassesBlock.dragData,
+                                  feedback: Material(
+                                    color: Colors.transparent,
+                                    child: _glassesChip(false),
+                                  ),
+                                  childWhenDragging: Opacity(
+                                    opacity: 0.3,
+                                    child: _glassesChip(false),
+                                  ),
+                                  child: _glassesChip(_selectedGlassesBlockIndex != null),
+                                ),
+                              ),
+                            ],
+                          ),
                         ],
+                        ),
                       ),
                     ),
                   ],
@@ -805,87 +998,76 @@ class _StoryTimelineEditorState extends State<StoryTimelineEditor> {
 
               // Toolbar & Playback Controls
               Container(
-                margin: const EdgeInsets.all(5),
+                margin: const EdgeInsets.fromLTRB(5, 0, 5, 4),
                 decoration: BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(AppColors.border_radius),
                   border: Border.all(color: AppColors.inputBorder),
                 ),
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    // Playback controls
-                    Container(
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(AppColors.border_radius),
-                        border: Border.all(color: AppColors.inputBorder),
-                      ),
-                      child: Row(
-                        children: [
-                          Row(
-                            children: [
-                              if (widget.audioPlayer != null) ...[
-                                IconButton(
-                                  icon: const Icon(Icons.replay, color: Colors.black, size: 20,),
-                                  onPressed: () {
-                                    widget.audioPlayer?.seek(Duration.zero);
-                                    if (!widget.isPlaying && widget.onTogglePlay != null) widget.onTogglePlay!();
-                                  },
-                                ),
-                                IconButton(
-                                  icon: Icon(widget.isPlaying ? Icons.pause : Icons.play_arrow, color: Colors.black, size: 25),
-                                  onPressed: widget.onTogglePlay,
-                                ),
-                              ]
-                            ],
-                          )
-                        ],
-                      ),
-                    ),
-                    // Editing tools
-                    Row(
-                      children: [
-                        _buildToolButton(Icons.call_split, 'تقسيم', _selectedBlockIndex != null ? _splitBlock : null),
-                        const SizedBox(width: 5),
-                        _buildToolButton(Icons.copy, 'تكرار', _selectedBlockIndex != null ? _duplicateBlock : null),
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      if (widget.audioPlayer != null) ...[
+                        _buildToolButton(
+                          Icons.replay,
+                          'إعادة',
+                          () {
+                            widget.audioPlayer?.seek(Duration.zero);
+                            if (!widget.isPlaying && widget.onTogglePlay != null) widget.onTogglePlay!();
+                          },
+                        ),
                         const SizedBox(width: 5),
                         _buildToolButton(
-                          Icons.delete_outline,
-                          'حذف',
-                          (_selectedBlockIndex != null ||
-                                  _selectedMotionBlockIndex != null ||
-                                  _selectedHatBlockIndex != null)
-                              ? _deleteBlock
-                              : null,
-                          isDestructive: true,
+                          widget.isPlaying ? Icons.pause : Icons.play_arrow,
+                          widget.isPlaying ? 'إيقاف' : 'تشغيل',
+                          widget.onTogglePlay,
                         ),
+                        const SizedBox(width: 5),
                       ],
-                    ),
-                  ],
+                      _buildToolButton(Icons.call_split, 'تقسيم', _selectedBlockIndex != null ? _splitBlock : null),
+                      const SizedBox(width: 5),
+                      _buildToolButton(Icons.copy, 'تكرار', _selectedBlockIndex != null ? _duplicateBlock : null),
+                      const SizedBox(width: 5),
+                      _buildToolButton(
+                        Icons.delete_outline,
+                        'حذف',
+                        (_selectedBlockIndex != null ||
+                                _selectedMotionBlockIndex != null ||
+                                _selectedHatBlockIndex != null ||
+                                _selectedGlassesBlockIndex != null)
+                            ? _deleteBlock
+                            : null,
+                        isDestructive: true,
+                      ),
+                      const SizedBox(width: 5),
+                      _buildToolButton(Icons.zoom_out, 'تصغير', () => _zoom(0.8)),
+                      const SizedBox(width: 5),
+                      _buildToolButton(Icons.zoom_in, 'تكبير', () => _zoom(1.2)),
+                    ],
+                  ),
                 ),
               ),
 
-              // Timeline Track Area
+              // The lane card stays fixed. Only the timeline inside it scrolls.
               Directionality(
                 textDirection: TextDirection.ltr,
-                child: SizedBox(
-                  height: 320,
+                child: Container(
+                  height: timelineHeight,
+                  margin: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+                  clipBehavior: Clip.antiAlias,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(AppColors.border_radius),
+                    border: Border.all(color: AppColors.inputBorder),
+                  ),
+                  padding: const EdgeInsets.symmetric(vertical: 4),
                   child: SingleChildScrollView(
-                    controller: _scrollController,
-                    scrollDirection: Axis.horizontal,
-                    padding: const EdgeInsets.symmetric(horizontal: 20),
-                    child: SizedBox(
-                      width: trackWidth,
-                      child: Container(
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(AppColors.border_radius),
-                        border: Border.all(color: AppColors.inputBorder),
-                      ),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 10),
+                      controller: _scrollController,
+                      scrollDirection: Axis.horizontal,
+                      child: SizedBox(
+                        width: trackWidth,
                         child: Stack(
                           clipBehavior: Clip.none,
                           children: [
@@ -910,7 +1092,7 @@ class _StoryTimelineEditorState extends State<StoryTimelineEditor> {
                             // Audio Waveform Track
                             Positioned(
                               left: 0,
-                              top: 25,
+                              top: _rulerSpace,
                               width: trackWidth,
                               height: _waveformHeight,
                               child: Container(
@@ -921,11 +1103,17 @@ class _StoryTimelineEditorState extends State<StoryTimelineEditor> {
                                     color: AppColors.inputBorder
                                   )
                                 ),
-                                child: CustomPaint(
-                                  painter: _WaveformPainter(
-                                    duration: totalSeconds,
-                                    seed: widget.audioFile.path.hashCode,
-                                  ),
+                                child: Stack(
+                                  children: [
+                                    CustomPaint(
+                                      painter: _WaveformPainter(
+                                        duration: totalSeconds,
+                                        seed: widget.audioFile.path.hashCode,
+                                      ),
+                                      child: const SizedBox.expand(),
+                                    ),
+                                    _trackHint('الصوت'),
+                                  ],
                                 ),
                               ),
                             ),
@@ -933,7 +1121,7 @@ class _StoryTimelineEditorState extends State<StoryTimelineEditor> {
                             // Character Blocks Track
                             Positioned(
                               left: 0,
-                              top: 25 + _waveformHeight + 5,
+                              top: characterTop,
                               width: trackWidth,
                               height: _trackHeight,
                               child: DragTarget<String>(
@@ -951,15 +1139,21 @@ class _StoryTimelineEditorState extends State<StoryTimelineEditor> {
                                   return Container(
                                     key: _trackKey,
                                     decoration: BoxDecoration(
-                                      color: candidateData.isNotEmpty ? Colors.blue.withOpacity(0.2) : Colors.white.withOpacity(0.05),
+                                      color: candidateData.isNotEmpty ? AppColors.secondaryContainer : AppColors.background,
                                       borderRadius: BorderRadius.circular(AppColors.border_radius),
-                                      border: Border.all(color: candidateData.isNotEmpty ? Colors.blue : Colors.transparent, width: 2),
+                                      border: Border.all(
+                                        color: candidateData.isNotEmpty ? AppColors.secondary : AppColors.inputBorder,
+                                        width: candidateData.isNotEmpty ? 2 : 1,
+                                      ),
                                     ),
                                     child: Stack(
                                       clipBehavior: Clip.none,
-                                      children: _blocks.asMap().entries.map((entry) {
-                                        return _buildTimelineBlock(entry.key, entry.value);
-                                      }).toList(),
+                                      children: [
+                                        if (_blocks.isEmpty) _trackHint('اسحب الشخصية إلى هنا'),
+                                        ..._blocks.asMap().entries.map((entry) {
+                                          return _buildTimelineBlock(entry.key, entry.value);
+                                        }),
+                                      ],
                                     ),
                                   );
                                 },
@@ -969,7 +1163,7 @@ class _StoryTimelineEditorState extends State<StoryTimelineEditor> {
                             // Motion Blocks Track
                             Positioned(
                               left: 0,
-                              top: 25 + _waveformHeight + 5 + _trackHeight + 5,
+                              top: motionTop,
                               width: trackWidth,
                               height: _trackHeight,
                               child: DragTarget<String>(
@@ -987,15 +1181,21 @@ class _StoryTimelineEditorState extends State<StoryTimelineEditor> {
                                   return Container(
                                     key: _motionTrackKey,
                                     decoration: BoxDecoration(
-                                      color: candidateData.isNotEmpty ? Colors.teal.withOpacity(0.2) : Colors.white.withOpacity(0.05),
+                                      color: candidateData.isNotEmpty ? AppColors.tertiaryContainer : AppColors.background,
                                       borderRadius: BorderRadius.circular(AppColors.border_radius),
-                                      border: Border.all(color: candidateData.isNotEmpty ? Colors.teal : Colors.transparent, width: 2),
+                                      border: Border.all(
+                                        color: candidateData.isNotEmpty ? AppColors.tertiary : AppColors.inputBorder,
+                                        width: candidateData.isNotEmpty ? 2 : 1,
+                                      ),
                                     ),
                                     child: Stack(
                                       clipBehavior: Clip.none,
-                                      children: _motionBlocks.asMap().entries.map((entry) {
-                                        return _buildMotionBlockWidget(entry.key, entry.value);
-                                      }).toList(),
+                                      children: [
+                                        if (_motionBlocks.isEmpty) _trackHint('اسحب الحركة إلى هنا'),
+                                        ..._motionBlocks.asMap().entries.map((entry) {
+                                          return _buildMotionBlockWidget(entry.key, entry.value);
+                                        }),
+                                      ],
                                     ),
                                   );
                                 },
@@ -1005,7 +1205,7 @@ class _StoryTimelineEditorState extends State<StoryTimelineEditor> {
                             // Hat Blocks Track
                             Positioned(
                               left: 0,
-                              top: 25 + _waveformHeight + 5 + (_trackHeight + 5) * 2,
+                              top: hatTop,
                               width: trackWidth,
                               height: _trackHeight,
                               child: DragTarget<String>(
@@ -1026,15 +1226,65 @@ class _StoryTimelineEditorState extends State<StoryTimelineEditor> {
                                   return Container(
                                     key: _hatTrackKey,
                                     decoration: BoxDecoration(
-                                      color: canAccept ? Colors.deepOrange.withOpacity(0.2) : Colors.white.withOpacity(0.05),
+                                      color: canAccept ? AppColors.primaryContainer : AppColors.background,
                                       borderRadius: BorderRadius.circular(AppColors.border_radius),
-                                      border: Border.all(color: canAccept ? Colors.deepOrange : Colors.transparent, width: 2),
+                                      border: Border.all(
+                                        color: canAccept ? AppColors.primary : AppColors.inputBorder,
+                                        width: canAccept ? 2 : 1,
+                                      ),
                                     ),
                                     child: Stack(
                                       clipBehavior: Clip.none,
-                                      children: _hatBlocks.asMap().entries.map((entry) {
-                                        return _buildHatBlockWidget(entry.key, entry.value);
-                                      }).toList(),
+                                      children: [
+                                        if (_hatBlocks.isEmpty) _trackHint('اسحب القبعة إلى هنا'),
+                                        ..._hatBlocks.asMap().entries.map((entry) {
+                                          return _buildHatBlockWidget(entry.key, entry.value);
+                                        }),
+                                      ],
+                                    ),
+                                  );
+                                },
+                              ),
+                            ),
+
+                            // Glasses track, directly under the hat track.
+                            Positioned(
+                              left: 0,
+                              top: glassesTop,
+                              width: trackWidth,
+                              height: _trackHeight,
+                              child: DragTarget<String>(
+                                onAcceptWithDetails: (details) {
+                                  if (!StoryGlassesBlock.isDrag(details.data)) return;
+                                  if (_glassesTrackKey.currentContext != null) {
+                                    final RenderBox box = _glassesTrackKey.currentContext!.findRenderObject() as RenderBox;
+                                    final Offset localOffset = box.globalToLocal(details.offset);
+                                    final double time = localOffset.dx / _pixelsPerSecond;
+                                    _addGlassesBlockAtTime(time);
+                                  }
+                                },
+                                builder: (context, candidateData, rejectedData) {
+                                  final canAccept = candidateData
+                                      .whereType<String>()
+                                      .any(StoryGlassesBlock.isDrag);
+                                  return Container(
+                                    key: _glassesTrackKey,
+                                    decoration: BoxDecoration(
+                                      color: canAccept ? AppColors.secondaryContainer : AppColors.background,
+                                      borderRadius: BorderRadius.circular(AppColors.border_radius),
+                                      border: Border.all(
+                                        color: canAccept ? AppColors.secondary : AppColors.inputBorder,
+                                        width: canAccept ? 2 : 1,
+                                      ),
+                                    ),
+                                    child: Stack(
+                                      clipBehavior: Clip.none,
+                                      children: [
+                                        if (_glassesBlocks.isEmpty) _trackHint('اسحب النظارة إلى هنا'),
+                                        ..._glassesBlocks.asMap().entries.map((entry) {
+                                          return _buildGlassesBlockWidget(entry.key, entry.value);
+                                        }),
+                                      ],
                                     ),
                                   );
                                 },
@@ -1100,8 +1350,6 @@ class _StoryTimelineEditorState extends State<StoryTimelineEditor> {
                     ),
                   ),
                 ),
-              ),
-              ),
             ]
           )
         );
@@ -1128,8 +1376,8 @@ class _StoryTimelineEditorState extends State<StoryTimelineEditor> {
 
   Widget _buildHatPaletteItem(Color color, bool isSelected) {
     return Container(
-      width: 48,
-      height: _blockHeight,
+      width: 36,
+      height: _paletteChipHeight,
       decoration: BoxDecoration(
         color: color,
         borderRadius: BorderRadius.circular(AppColors.border_radius),
@@ -1161,7 +1409,7 @@ class _StoryTimelineEditorState extends State<StoryTimelineEditor> {
          border: Border.all(color: AppColors.inputBorder),
        ),
         child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 5, horizontal: 5),
+          padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 4),
           child: Row(
             children: [
               Icon(icon, color: color, size: 16),
@@ -1174,6 +1422,30 @@ class _StoryTimelineEditorState extends State<StoryTimelineEditor> {
     );
   }
 
+  Widget _edgeHandle({
+    required bool start,
+    required GestureDragUpdateCallback onDrag,
+  }) {
+    return Positioned(
+      left: start ? -10 : null,
+      right: start ? null : -10,
+      top: 0,
+      bottom: 0,
+      width: 20,
+      child: GestureDetector(
+        onHorizontalDragUpdate: onDrag,
+        child: Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(4),
+            border: Border.all(color: AppColors.inputBorder),
+          ),
+          child: const Icon(Icons.drag_indicator, size: 12, color: Colors.black),
+        ),
+      ),
+    );
+  }
+
   Widget _buildTimelineBlock(int index, StoryBlock block) {
     final left = block.startTime * _pixelsPerSecond;
     final width = (block.endTime - block.startTime) * _pixelsPerSecond;
@@ -1181,15 +1453,16 @@ class _StoryTimelineEditorState extends State<StoryTimelineEditor> {
 
     return Positioned(
       left: left,
-      top: 5,
+      top: _laneBlockTop(isSelected),
       width: width,
-      height: _blockHeight,
+      height: _laneBlockHeight(isSelected),
       child: GestureDetector(
         onTap: () {
           setState(() {
             _selectedBlockIndex = index;
             _selectedMotionBlockIndex = null;
             _selectedHatBlockIndex = null;
+            _selectedGlassesBlockIndex = null;
           });
         },
         child: Stack(
@@ -1205,8 +1478,8 @@ class _StoryTimelineEditorState extends State<StoryTimelineEditor> {
                   color: CharacterHelper.getColor(block.characterId).withOpacity(0.9),
                   borderRadius: BorderRadius.circular(AppColors.border_radius),
                   border: Border.all(
-                    color: isSelected ? AppColors.inputBorder : Colors.black54,
-                    width: isSelected ? 2.5 : 1.0,
+                    color: AppColors.inputBorder,
+                    width: isSelected ? 2 : 1,
                   ),
                   boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 4, offset: Offset(0, 2))],
                 ),
@@ -1220,60 +1493,14 @@ class _StoryTimelineEditorState extends State<StoryTimelineEditor> {
               ),
             ),
             
-            // Handles only show when selected
             if (isSelected) ...[
-              // Left Handle
-              Positioned(
-                left: -10,
-                top: 0,
-                bottom: 0,
-                width: 20,
-                child: GestureDetector(
-                  onHorizontalDragUpdate: (details) {
-                    _updateBlockStart(index, details.delta.dx / _pixelsPerSecond);
-                  },
-                  child: Container(
-                    color: Colors.transparent,
-                    child: Center(
-                      child: Container(
-                        width: 10,
-                        height: 30,
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(4),
-                          boxShadow: const [BoxShadow(color: Colors.black54, blurRadius: 2)],
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
+              _edgeHandle(
+                start: true,
+                onDrag: (details) => _updateBlockStart(index, details.delta.dx / _pixelsPerSecond),
               ),
-
-              // Right Handle
-              Positioned(
-                right: -10,
-                top: 0,
-                bottom: 0,
-                width: 20,
-                child: GestureDetector(
-                  onHorizontalDragUpdate: (details) {
-                    _updateBlockEnd(index, details.delta.dx / _pixelsPerSecond);
-                  },
-                  child: Container(
-                    color: Colors.transparent,
-                    child: Center(
-                      child: Container(
-                        width: 10,
-                        height: 30,
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(4),
-                          boxShadow: const [BoxShadow(color: Colors.black54, blurRadius: 2)],
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
+              _edgeHandle(
+                start: false,
+                onDrag: (details) => _updateBlockEnd(index, details.delta.dx / _pixelsPerSecond),
               ),
             ]
           ],
@@ -1290,15 +1517,16 @@ class _StoryTimelineEditorState extends State<StoryTimelineEditor> {
 
     return Positioned(
       left: left,
-      top: 5,
+      top: _laneBlockTop(isSelected),
       width: width,
-      height: _blockHeight,
+      height: _laneBlockHeight(isSelected),
       child: GestureDetector(
         onTap: () {
           setState(() {
             _selectedMotionBlockIndex = index;
             _selectedBlockIndex = null;
             _selectedHatBlockIndex = null;
+            _selectedGlassesBlockIndex = null;
           });
         },
         child: Stack(
@@ -1314,8 +1542,8 @@ class _StoryTimelineEditorState extends State<StoryTimelineEditor> {
                   color: Colors.teal.shade300,
                   borderRadius: BorderRadius.circular(AppColors.border_radius),
                   border: Border.all(
-                    color: isSelected ? Colors.teal.shade800 : Colors.teal.shade400,
-                    width: isSelected ? 2.5 : 1.0,
+                    color: AppColors.inputBorder,
+                    width: isSelected ? 2 : 1,
                   ),
                   boxShadow: const [BoxShadow(color: Colors.teal, blurRadius: 4, offset: Offset(0, 2))],
                 ),
@@ -1329,49 +1557,16 @@ class _StoryTimelineEditorState extends State<StoryTimelineEditor> {
               ),
             ),
 
-            // Start Drag Handle
-            if (isSelected)
-              Positioned(
-                left: -10,
-                top: 0,
-                bottom: 0,
-                width: 20,
-                child: GestureDetector(
-                  onHorizontalDragUpdate: (details) {
-                    _updateMotionBlockStart(index, details.delta.dx / _pixelsPerSecond);
-                  },
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(4),
-                      border: Border.all(color: Colors.black, width: 0.5),
-                    ),
-                    child: const Icon(Icons.drag_indicator, size: 12, color: Colors.black),
-                  ),
-                ),
+            if (isSelected) ...[
+              _edgeHandle(
+                start: true,
+                onDrag: (details) => _updateMotionBlockStart(index, details.delta.dx / _pixelsPerSecond),
               ),
-            
-            // End Drag Handle
-            if (isSelected)
-              Positioned(
-                right: -10,
-                top: 0,
-                bottom: 0,
-                width: 20,
-                child: GestureDetector(
-                  onHorizontalDragUpdate: (details) {
-                    _updateMotionBlockEnd(index, details.delta.dx / _pixelsPerSecond);
-                  },
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(4),
-                      border: Border.all(color: Colors.black, width: 0.5),
-                    ),
-                    child: const Icon(Icons.drag_indicator, size: 12, color: Colors.black),
-                  ),
-                ),
+              _edgeHandle(
+                start: false,
+                onDrag: (details) => _updateMotionBlockEnd(index, details.delta.dx / _pixelsPerSecond),
               ),
+            ],
           ],
         ),
       ),
@@ -1387,15 +1582,16 @@ class _StoryTimelineEditorState extends State<StoryTimelineEditor> {
 
     return Positioned(
       left: left,
-      top: 5,
+      top: _laneBlockTop(isSelected),
       width: width,
-      height: _blockHeight,
+      height: _laneBlockHeight(isSelected),
       child: GestureDetector(
         onTap: () {
           setState(() {
             _selectedHatBlockIndex = index;
             _selectedBlockIndex = null;
             _selectedMotionBlockIndex = null;
+            _selectedGlassesBlockIndex = null;
           });
         },
         child: Stack(
@@ -1410,8 +1606,8 @@ class _StoryTimelineEditorState extends State<StoryTimelineEditor> {
                   color: block.color,
                   borderRadius: BorderRadius.circular(AppColors.border_radius),
                   border: Border.all(
-                    color: isSelected ? Colors.deepOrange : Colors.black54,
-                    width: isSelected ? 2.5 : 1.0,
+                    color: AppColors.inputBorder,
+                    width: isSelected ? 2 : 1,
                   ),
                   boxShadow: const [
                     BoxShadow(color: Colors.black26, blurRadius: 4, offset: Offset(0, 2)),
@@ -1437,48 +1633,231 @@ class _StoryTimelineEditorState extends State<StoryTimelineEditor> {
                 ),
               ),
             ),
-            if (isSelected)
-              Positioned(
-                left: -10,
-                top: 0,
-                bottom: 0,
-                width: 20,
-                child: GestureDetector(
-                  onHorizontalDragUpdate: (details) {
-                    _updateHatBlockStart(index, details.delta.dx / _pixelsPerSecond);
-                  },
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(4),
-                      border: Border.all(color: Colors.black, width: 0.5),
-                    ),
-                    child: const Icon(Icons.drag_indicator, size: 12, color: Colors.black),
-                  ),
-                ),
+            if (isSelected) ...[
+              _edgeHandle(
+                start: true,
+                onDrag: (details) => _updateHatBlockStart(index, details.delta.dx / _pixelsPerSecond),
               ),
-            if (isSelected)
-              Positioned(
-                right: -10,
-                top: 0,
-                bottom: 0,
-                width: 20,
-                child: GestureDetector(
-                  onHorizontalDragUpdate: (details) {
-                    _updateHatBlockEnd(index, details.delta.dx / _pixelsPerSecond);
-                  },
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(4),
-                      border: Border.all(color: Colors.black, width: 0.5),
-                    ),
-                    child: const Icon(Icons.drag_indicator, size: 12, color: Colors.black),
-                  ),
-                ),
+              _edgeHandle(
+                start: false,
+                onDrag: (details) => _updateHatBlockEnd(index, details.delta.dx / _pixelsPerSecond),
               ),
+            ],
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _glassesChip(bool selected) {
+    return Container(
+      width: 64,
+      height: _paletteChipHeight,
+      decoration: BoxDecoration(
+        color: selected ? Colors.black87 : const Color(0xFF2C2C2E),
+        borderRadius: BorderRadius.circular(AppColors.border_radius),
+        border: Border.all(color: selected ? Colors.black : Colors.black26, width: selected ? 2 : 1),
+      ),
+      child: const Center(
+        child: Text(
+          'نظارة',
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGlassesBlockWidget(int index, StoryGlassesBlock block) {
+    final left = block.startTime * _pixelsPerSecond;
+    final width = (block.endTime - block.startTime) * _pixelsPerSecond;
+    final isSelected = _selectedGlassesBlockIndex == index;
+    return Positioned(
+      left: left,
+      top: _laneBlockTop(isSelected),
+      width: width,
+      height: _laneBlockHeight(isSelected),
+      child: GestureDetector(
+        onTap: () {
+          setState(() {
+            _selectedGlassesBlockIndex = index;
+            _selectedBlockIndex = null;
+            _selectedMotionBlockIndex = null;
+            _selectedHatBlockIndex = null;
+          });
+        },
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            GestureDetector(
+              onHorizontalDragUpdate: (details) {
+                _moveGlassesBlock(index, details.delta.dx / _pixelsPerSecond);
+              },
+              child: Container(
+                decoration: BoxDecoration(
+                  color: const Color(0xFF2C2C2E),
+                  borderRadius: BorderRadius.circular(AppColors.border_radius),
+                  border: Border.all(
+                    color: AppColors.inputBorder,
+                    width: isSelected ? 2 : 1,
+                  ),
+                ),
+                child: const Center(
+                  child: Text(
+                    'نظارة',
+                    style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ),
+            ),
+            if (isSelected) ...[
+              _edgeHandle(
+                start: true,
+                onDrag: (details) => _updateGlassesBlockStart(index, details.delta.dx / _pixelsPerSecond),
+              ),
+              _edgeHandle(
+                start: false,
+                onDrag: (details) => _updateGlassesBlockEnd(index, details.delta.dx / _pixelsPerSecond),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PaletteLane extends StatefulWidget {
+  final String title;
+  final List<Widget> children;
+
+  final bool labeled;
+
+  const _PaletteLane({
+    super.key,
+    required this.title,
+    required this.children,
+    this.labeled = true,
+  });
+
+  @override
+  State<_PaletteLane> createState() => _PaletteLaneState();
+}
+
+class _PaletteLaneState extends State<_PaletteLane> {
+  final ScrollController _controller = ScrollController();
+
+  @override
+  void initState() {
+    super.initState();
+    _controller.addListener(() {
+      if (mounted) setState(() {});
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _dragBy(double dx, double width) {
+    if (!_controller.hasClients || width <= 0) return;
+    final max = _controller.position.maxScrollExtent;
+    if (max <= 0) return;
+    final sign = Directionality.of(context) == TextDirection.rtl ? -1.0 : 1.0;
+    final next = _controller.offset + sign * dx * (max / width);
+    _controller.jumpTo(next.clamp(0.0, max));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final rtl = Directionality.of(context) == TextDirection.rtl;
+    final max = _controller.hasClients ? _controller.position.maxScrollExtent : 0.0;
+    final offset = _controller.hasClients ? _controller.offset : 0.0;
+    final t = max <= 0 ? 0.0 : (offset / max).clamp(0.0, 1.0);
+    final thumbX = rtl ? 1 - 2 * t : -1 + 2 * t;
+
+    return SizedBox(
+      height: 52,
+      child: Row(
+        children: [
+          if (widget.labeled)
+          SizedBox(
+            width: 84,
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  widget.title,
+                  style: const TextStyle(
+                    color: AppColors.secondary,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                const Text(
+                  'اسحب للمسار',
+                  style: TextStyle(color: Color(0xFF94A3B8), fontSize: 10),
+                ),
+              ],
+            ),
+          ),
+          if (widget.labeled)
+          const VerticalDivider(width: 1, thickness: 1, color: AppColors.inputBorder),
+          Expanded(
+            child: Column(
+              children: [
+                Expanded(
+                  child: ListView(
+                    controller: _controller,
+                    scrollDirection: Axis.horizontal,
+                    padding: const EdgeInsets.symmetric(horizontal: 6),
+                    children: widget.children,
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(8, 0, 8, 2),
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      return GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onHorizontalDragUpdate: (details) {
+                          _dragBy(details.delta.dx, constraints.maxWidth);
+                        },
+                        child: Container(
+                          height: 12,
+                          decoration: BoxDecoration(
+                            color: AppColors.background,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: AppColors.inputBorder),
+                          ),
+                          child: Align(
+                            alignment: Alignment(thumbX, 0),
+                            child: Container(
+                              width: 28,
+                              height: 8,
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(6),
+                                border: Border.all(color: const Color(0xFF94A3B8)),
+                              ),
+                              child: const Icon(Icons.drag_handle, size: 12, color: Color(0xFF94A3B8)),
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

@@ -114,16 +114,45 @@ class StoryHatBlock {
   }
 }
 
+/// Timed glasses overlay. Drag payload is `glasses`.
+class StoryGlassesBlock {
+  final double startTime;
+  final double endTime;
+
+  StoryGlassesBlock({required this.startTime, required this.endTime});
+
+  static const dragData = 'glasses';
+
+  static bool isDrag(String data) => data == dragData;
+
+  bool isPlaying(double currentTime) {
+    return currentTime >= startTime && currentTime <= endTime;
+  }
+
+  factory StoryGlassesBlock.fromJson(Map<String, dynamic> json) {
+    return StoryGlassesBlock(
+      startTime: (json['startTime'] as num).toDouble(),
+      endTime: (json['endTime'] as num).toDouble(),
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {'startTime': startTime, 'endTime': endTime};
+  }
+}
+
 class StoryTimeline {
   final List<StoryBlock> blocks;
   final List<StoryMotionBlock> motionBlocks;
   final List<StoryHatBlock> hatBlocks;
+  final List<StoryGlassesBlock> glassesBlocks;
   final double totalDuration; // In seconds
 
   StoryTimeline({
     required this.blocks,
     this.motionBlocks = const [],
     this.hatBlocks = const [],
+    this.glassesBlocks = const [],
     required this.totalDuration,
   });
 
@@ -157,6 +186,14 @@ class StoryTimeline {
     return null;
   }
 
+  /// Whether the glasses should be on at [time].
+  bool glassesOnAt(double time) {
+    for (final block in glassesBlocks) {
+      if (block.isPlaying(time)) return true;
+    }
+    return false;
+  }
+
   /// Returns a unique list of all characters used in this timeline
   /// This is useful for preloading models.
   List<String> get allCharacterIds {
@@ -167,6 +204,7 @@ class StoryTimeline {
     final blocksList = json['blocks'] as List<dynamic>? ?? [];
     final motionBlocksList = json['motionBlocks'] as List<dynamic>? ?? [];
     final hatBlocksList = json['hatBlocks'] as List<dynamic>? ?? [];
+    final glassesBlocksList = json['glassesBlocks'] as List<dynamic>? ?? [];
     return StoryTimeline(
       blocks: blocksList
           .map((b) => StoryBlock.fromJson(b as Map<String, dynamic>))
@@ -177,6 +215,9 @@ class StoryTimeline {
       hatBlocks: hatBlocksList
           .map((b) => StoryHatBlock.fromJson(b as Map<String, dynamic>))
           .toList(),
+      glassesBlocks: glassesBlocksList
+          .map((b) => StoryGlassesBlock.fromJson(b as Map<String, dynamic>))
+          .toList(),
       totalDuration: (json['totalDuration'] as num?)?.toDouble() ?? 0.0,
     );
   }
@@ -186,6 +227,7 @@ class StoryTimeline {
       'blocks': blocks.map((b) => b.toJson()).toList(),
       'motionBlocks': motionBlocks.map((b) => b.toJson()).toList(),
       'hatBlocks': hatBlocks.map((b) => b.toJson()).toList(),
+      'glassesBlocks': glassesBlocks.map((b) => b.toJson()).toList(),
       'totalDuration': totalDuration,
     };
   }

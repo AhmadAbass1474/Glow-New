@@ -624,6 +624,7 @@ class _ChildStoryViewerScreenState extends State<ChildStoryViewerScreen>
                               String activeChar = story.characterName;
                               CharacterMotion? activeMotion;
                               var showHat = false;
+                              var showGlasses = false;
                               var hatColor = const Color(0xFF2C2C2E);
                               if (_currentTimeline != null) {
                                 final t = position.inMilliseconds / 1000.0;
@@ -649,6 +650,7 @@ class _ChildStoryViewerScreenState extends State<ChildStoryViewerScreen>
                                   showHat = true;
                                   hatColor = hat.color;
                                 }
+                                showGlasses = _currentTimeline!.glassesOnAt(t);
                               }
 
                               return Column(
@@ -698,6 +700,7 @@ class _ChildStoryViewerScreenState extends State<ChildStoryViewerScreen>
                                                   motion: activeMotion,
                                                   showHat: showHat,
                                                   hatColor: hatColor,
+                                                  showGlasses: showGlasses,
                                                   onReady: () => _onCharacterReady(_sceneGeneration),
                                                 ),
                                               ),

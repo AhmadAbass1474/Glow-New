@@ -26,6 +26,8 @@ class SmartCharacterViewer extends StatelessWidget {
     this.showSkeleton = false,
     this.showHat = false,
     this.hatColor = const Color(0xFF2C2C2E),
+    this.showMuscles = false,
+    this.showGlasses = false,
     this.onReady,
   });
   final String characterName;
@@ -38,6 +40,8 @@ class SmartCharacterViewer extends StatelessWidget {
   final bool showSkeleton;
   final bool showHat;
   final Color hatColor;
+  final bool showMuscles;
+  final bool showGlasses;
   final VoidCallback? onReady;
 
   @override
@@ -56,6 +60,8 @@ class SmartCharacterViewer extends StatelessWidget {
         showSkeleton: showSkeleton,
         showHat: showHat,
         hatColor: hatColor,
+        showMuscles: showMuscles,
+        showGlasses: showGlasses,
         motion: motion,
         playbackPosition: playbackPosition,
         onReady: onReady,
@@ -147,7 +153,7 @@ class _CharacterSurfaceState extends State<_CharacterSurface>
     // the GLB and recreating the EGL context whenever the layout changes.
     final pixels =
         (widget.size.longestSide * MediaQuery.devicePixelRatioOf(context))
-            .clamp(512.0, _compatibilityMode ? 640.0 : 1024.0);
+            .clamp(512.0, _compatibilityMode ? 640.0 : 2048.0);
     final view = _GuardedThreeJS(
       size: _canvasSize,
       canRender: _canRender,
@@ -311,7 +317,7 @@ class _CharacterSurfaceState extends State<_CharacterSurface>
     final distance =
         math.max(3.5, _modelWidth / aspect) /
         (2 * math.tan(38 * math.pi / 360)) *
-        1.26;
+        1.02;
     camera.position.setValues(0.32, 2.06, distance);
     camera.lookAt(three.Vector3(0, 1.78, 0));
   }
@@ -364,6 +370,23 @@ class _CharacterSurfaceState extends State<_CharacterSurface>
       });
     }
     _applyHat();
+    _applyMuscles();
+    _applyGlasses();
+  }
+
+  void _applyGlasses() {
+    _model?.traverse((object) {
+      if (object.material?.name != 'Glasses') return;
+      object.visible = config.showGlasses;
+    });
+  }
+
+  void _applyMuscles() {
+    _skinPalette.setMuscles(config.showMuscles);
+    _model?.traverse((object) {
+      if (object.material?.name != 'Muscles') return;
+      object.visible = false;
+    });
   }
 
   void _applyHat() {
@@ -545,6 +568,12 @@ class _CharacterSurfaceState extends State<_CharacterSurface>
     }
     if (old.showHat != config.showHat || old.hatColor != config.hatColor) {
       _applyHat();
+    }
+    if (old.showMuscles != config.showMuscles) {
+      _applyMuscles();
+    }
+    if (old.showGlasses != config.showGlasses) {
+      _applyGlasses();
     }
     if (old.storyText != config.storyText) {
       _plan = StoryMotionPlan.fromText(config.storyText);
