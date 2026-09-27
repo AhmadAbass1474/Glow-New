@@ -1,8 +1,10 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:audioplayers/audioplayers.dart';
+import '../../../../core/audio/child_button_voice.dart';
 import '../../../../core/widgets/smart_character_viewer.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/services/resource_manager.dart';
@@ -36,6 +38,7 @@ class _ChildStoryViewerScreenState extends State<ChildStoryViewerScreen>
 
   // Audio Player and Progress
   AudioPlayer? _audioPlayer;
+  String? _sceneAudioPath;
   final List<StreamSubscription<dynamic>> _audioSubscriptions = [];
   Future<void> _audioCommands = Future<void>.value();
   final ValueNotifier<Duration> _positionNotifier = ValueNotifier<Duration>(
@@ -45,6 +48,8 @@ class _ChildStoryViewerScreenState extends State<ChildStoryViewerScreen>
   Duration _totalDuration = const Duration(seconds: 10); // default if no audio
   bool _hasAudio = false;
   bool _isMuted = false;
+  bool _buttonVoiceDucking = false;
+  bool _advanceAfterVoice = false;
   bool _playRequested = true;
   bool _isAppActive = true;
   bool _audioCompleted = false;
@@ -66,6 +71,76 @@ class _ChildStoryViewerScreenState extends State<ChildStoryViewerScreen>
     _contentBloc.add(
       ContentEvent.getStories(widget.mission.id),
     );
+    ChildButtonVoice.speaking.addListener(_onButtonVoice);
+    _positionNotifier.addListener(_onTimelineLook);
+  }
+
+  void _onTimelineLook() {
+    if (!mounted || _leaving) return;
+    final next = _timelineLookKey(_positionNotifier.value);
+    if (next == _timelineLook) return;
+    _timelineLook = next;
+    setState(() {});
+  }
+
+  String _timelineLook = '';
+
+  String _timelineLookKey(Duration position) {
+    final timeline = _currentTimeline;
+    if (timeline == null) return '';
+    final t = position.inMilliseconds / 1000.0;
+    final hat = timeline.getActiveHatAt(t);
+    return '${timeline.getActiveCharacterAt(t) ?? ''}|'
+        '${timeline.getActiveMotionAt(t) ?? ''}|'
+        '${hat?.colorHex ?? ''}|'
+        '${timeline.glassesOnAt(t)}|'
+        '${timeline.musclesOnAt(t)}';
+  }
+
+  void _onButtonVoice() {
+    if (!mounted || _leaving) return;
+    final speaking = ChildButtonVoice.speaking.value;
+    _buttonVoiceDucking = speaking;
+    final player = _audioPlayer;
+    final generation = _sceneGeneration;
+    if (!_hasAudio || player == null) return;
+    unawaited(_applyStoryDuck(player, generation, speaking));
+  }
+
+  Future<void> _applyStoryDuck(
+    AudioPlayer player,
+    int generation,
+    bool speaking,
+  ) async {
+    if (!_isCurrentScene(generation) || player != _audioPlayer) return;
+    try {
+      if (speaking) {
+        await player.setVolume(_isMuted ? 0 : 0.2);
+        if (_playRequested && _isAppActive && !_audioCompleted) {
+          await player.resume();
+        }
+        return;
+      }
+
+      await player.setVolume(_isMuted ? 0 : 1);
+      if (_advanceAfterVoice) {
+        _advanceAfterVoice = false;
+        _audioCompleted = true;
+        if (_playRequested && _isAppActive && _isCurrentScene(generation)) {
+          _nextStory();
+        }
+        return;
+      }
+      if (_playRequested &&
+          _isAppActive &&
+          _isCharacterReady &&
+          !_audioCompleted &&
+          _isCurrentScene(generation)) {
+        await player.resume();
+      }
+    } catch (error) {
+      debugPrint('Story duck failed: $error');
+    }
   }
 
   bool _isCurrentScene(int generation) =>
@@ -77,13 +152,18 @@ class _ChildStoryViewerScreenState extends State<ChildStoryViewerScreen>
         if (_isCurrentScene(generation) && duration > Duration.zero) {
           setState(() => _totalDuration = duration);
         }
-      }, onError: (Object error) => _onAudioError(error, generation)),
+      }, onError: (Object error) {
+        debugPrint('Story duration failed: $error');
+      }),
       player.onPositionChanged.listen((position) {
         if (_isCurrentScene(generation) && _hasAudio) {
           _positionNotifier.value = position;
         }
-      }, onError: (Object error) => _onAudioError(error, generation)),
+      }, onError: (Object error) {
+        debugPrint('Story position failed: $error');
+      }),
       player.onPlayerStateChanged.listen((state) {
+        if (_buttonVoiceDucking) return;
         if (_isCurrentScene(generation) && _hasAudio) {
           setState(() {
             _isPlaying =
@@ -95,14 +175,24 @@ class _ChildStoryViewerScreenState extends State<ChildStoryViewerScreen>
         }
       }),
       player.onPlayerComplete.listen((_) {
+        if (_buttonVoiceDucking) {
+          _advanceAfterVoice = true;
+          return;
+        }
         if (!_isCurrentScene(generation) || !_hasAudio) return;
+        if (_positionNotifier.value < const Duration(milliseconds: 500) &&
+            _totalDuration > const Duration(seconds: 1)) {
+          return;
+        }
         _audioCompleted = true;
         if (_playRequested && _isAppActive) {
           _nextStory();
         } else {
           setState(() => _isPlaying = false);
         }
-      }, onError: (Object error) => _onAudioError(error, generation)),
+      }, onError: (Object error) {
+        debugPrint('Story completion failed: $error');
+      }),
     ]);
   }
 
@@ -124,22 +214,19 @@ class _ChildStoryViewerScreenState extends State<ChildStoryViewerScreen>
     });
   }
 
-  void _onAudioError(Object error, int generation) {
-    // Preparation errors are handled by _loadAudio, which tries the next source.
-    if (_isCurrentScene(generation) && _hasAudio) {
-      debugPrint('Story audio stream failed: $error');
-      _startFallbackTimer(generation);
-    }
-  }
-
-  void _detachAudio() {
+  void _cancelAudioListeners() {
     for (final subscription in _audioSubscriptions) {
       unawaited(subscription.cancel());
     }
     _audioSubscriptions.clear();
     _pollingTimer?.cancel();
+  }
+
+  void _detachAudio() {
+    _cancelAudioListeners();
     final player = _audioPlayer;
     _audioPlayer = null;
+    _sceneAudioPath = null;
     _audioCommands = Future<void>.value();
     if (player != null) unawaited(_disposePlayer(player));
   }
@@ -152,20 +239,32 @@ class _ChildStoryViewerScreenState extends State<ChildStoryViewerScreen>
     }
   }
 
-  void _startStory() {
+  Future<void> _startStory() async {
     if (!mounted || _leaving || _stories.isEmpty) return;
     final generation = ++_sceneGeneration;
     _fallbackTimer?.cancel();
     _fallbackClock
       ..stop()
       ..reset();
-    _detachAudio();
+    _cancelAudioListeners();
+    _audioCommands = Future<void>.value();
+    final oldPlayer = _audioPlayer;
+    _audioPlayer = null;
+    _sceneAudioPath = null;
+    if (oldPlayer != null) {
+      try {
+        await oldPlayer.dispose();
+      } catch (error) {
+        debugPrint('Story audio disposal failed: $error');
+      }
+    }
+    if (!_isCurrentScene(generation)) return;
     setState(() {
-      _isCharacterReady = false;
       _playRequested = true;
       _isPlaying = false;
       _hasAudio = false;
       _audioCompleted = false;
+      _advanceAfterVoice = false;
       _totalDuration = const Duration(seconds: 10);
     });
     _positionNotifier.value = Duration.zero;
@@ -215,27 +314,100 @@ class _ChildStoryViewerScreenState extends State<ChildStoryViewerScreen>
     int generation,
   ) async {
     final resourceManager = sl<ResourceManager>();
-    final localPath = resourceManager.getLocalFilePath(audioUrl);
-    final sources = <Source>[
-      if (localPath != null) DeviceFileSource(localPath),
-      if (audioUrl.startsWith('http')) UrlSource(audioUrl),
-    ];
-    for (final source in sources) {
-      try {
-        await player.setSource(source);
-        if (!_isCurrentScene(generation)) return;
-        await player.setVolume(_isMuted ? 0 : 1);
-        if (!_isCurrentScene(generation)) return;
-        setState(() => _hasAudio = true);
-        _syncPlayback();
-        resourceManager.downloadAndCacheInBackground(audioUrl, folder: 'audio');
+    var localPath = resourceManager.getLocalFilePath(audioUrl);
+    if ((localPath == null || !File(localPath).existsSync()) &&
+        audioUrl.startsWith('http')) {
+      localPath = await resourceManager.downloadAndCacheFile(
+        audioUrl,
+        folder: 'audio',
+      );
+    }
+    if (!_isCurrentScene(generation)) return;
+    if (localPath != null && await _playLocal(player, localPath, generation)) {
+      return;
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 300));
+    if (!_isCurrentScene(generation)) return;
+    if (localPath != null && await _playLocal(player, localPath, generation)) {
+      return;
+    }
+    if (audioUrl.startsWith('http')) {
+      await resourceManager.invalidate(audioUrl);
+      localPath = await resourceManager.downloadAndCacheFile(
+        audioUrl,
+        folder: 'audio',
+      );
+      if (!_isCurrentScene(generation)) return;
+      if (localPath != null &&
+          await _playLocal(player, localPath, generation)) {
         return;
-      } catch (error) {
-        if (!_isCurrentScene(generation)) return;
-        debugPrint('Story audio source unavailable: $error');
       }
     }
+    debugPrint('Story audio unavailable for $audioUrl');
     if (_isCurrentScene(generation)) _startFallbackTimer(generation);
+  }
+
+  Future<bool> _playLocal(
+    AudioPlayer player,
+    String path,
+    int generation,
+  ) async {
+    try {
+      if (!File(path).existsSync()) return false;
+      await player.setPlayerMode(PlayerMode.mediaPlayer);
+      await player.setReleaseMode(ReleaseMode.stop);
+      await player.setSource(DeviceFileSource(path));
+      if (!_isCurrentScene(generation) || player != _audioPlayer) return true;
+      await player.setVolume(_isMuted ? 0 : (_buttonVoiceDucking ? 0.2 : 1));
+      Duration? duration;
+      try {
+        duration = await player.getDuration();
+      } catch (error) {
+        debugPrint('Story duration unavailable: $error');
+      }
+      if (!_isCurrentScene(generation) || player != _audioPlayer) return true;
+      _sceneAudioPath = path;
+      setState(() {
+        _hasAudio = true;
+        if (duration != null && duration > Duration.zero) {
+          _totalDuration = duration;
+        } else if (_currentTimeline != null) {
+          _totalDuration = Duration(
+            milliseconds: (_currentTimeline!.totalDuration * 1000).round(),
+          );
+        }
+      });
+      _syncPlayback();
+      return true;
+    } catch (error) {
+      debugPrint('Story audio source unavailable: $error');
+      return false;
+    }
+  }
+
+  Future<void> _resumeCurrent(AudioPlayer player) async {
+    final path = _sceneAudioPath;
+    try {
+      if (_audioCompleted ||
+          player.state == PlayerState.completed ||
+          player.state == PlayerState.stopped) {
+        _audioCompleted = false;
+        await player.seek(Duration.zero);
+      }
+      await player.resume();
+      if (player.state == PlayerState.playing) return;
+    } catch (error) {
+      debugPrint('Story resume failed: $error');
+    }
+    if (path == null || !File(path).existsSync()) {
+      throw StateError('ملف الصوت غير جاهز');
+    }
+    _audioCompleted = false;
+    _positionNotifier.value = Duration.zero;
+    await player.play(
+      DeviceFileSource(path),
+      volume: _isMuted ? 0 : (_buttonVoiceDucking ? 0.2 : 1),
+    );
   }
 
   bool _isCharacterReady = false;
@@ -282,10 +454,22 @@ class _ChildStoryViewerScreenState extends State<ChildStoryViewerScreen>
       try {
         await command(player);
       } catch (error) {
-        if (_isCurrentScene(generation) && player == _audioPlayer) {
-          debugPrint('Story audio playback failed: $error');
-          _startFallbackTimer(generation);
+        if (!_isCurrentScene(generation) || player != _audioPlayer) return;
+        debugPrint('Story audio playback failed: $error');
+        final path = _sceneAudioPath;
+        if (path != null && File(path).existsSync()) {
+          try {
+            _audioCompleted = false;
+            await player.play(
+              DeviceFileSource(path),
+              volume: _isMuted ? 0 : 1,
+            );
+            return;
+          } catch (retryError) {
+            debugPrint('Story audio retry failed: $retryError');
+          }
         }
+        _startFallbackTimer(generation);
       }
     });
   }
@@ -297,11 +481,7 @@ class _ChildStoryViewerScreenState extends State<ChildStoryViewerScreen>
       if (!shouldPlay) setState(() => _isPlaying = false);
       _queueAudioCommand((player) async {
         if (shouldPlay) {
-          if (_audioCompleted) {
-            _nextStory();
-          } else {
-            await player.resume();
-          }
+          await _resumeCurrent(player);
         } else {
           await player.pause();
         }
@@ -317,7 +497,19 @@ class _ChildStoryViewerScreenState extends State<ChildStoryViewerScreen>
   }
 
   void _togglePlayPause() {
-    setState(() => _playRequested = !_playRequested);
+    if (_isPlaying) {
+      setState(() => _playRequested = false);
+      _syncPlayback();
+      return;
+    }
+    setState(() {
+      _playRequested = true;
+      _audioCompleted = false;
+    });
+    if (!_hasAudio || _audioPlayer == null) {
+      unawaited(_startStory());
+      return;
+    }
     _syncPlayback();
   }
 
@@ -325,6 +517,7 @@ class _ChildStoryViewerScreenState extends State<ChildStoryViewerScreen>
     if (!_isCurrentScene(generation)) return;
     setState(() => _isCharacterReady = true);
     _syncPlayback();
+    unawaited(ChildButtonVoice.warm());
   }
 
   void _toggleMute() {
@@ -381,6 +574,8 @@ class _ChildStoryViewerScreenState extends State<ChildStoryViewerScreen>
 
   @override
   void dispose() {
+    _positionNotifier.removeListener(_onTimelineLook);
+    ChildButtonVoice.speaking.removeListener(_onButtonVoice);
     WidgetsBinding.instance.removeObserver(this);
     _stopPlayback();
     _positionNotifier.dispose();
@@ -414,6 +609,16 @@ class _ChildStoryViewerScreenState extends State<ChildStoryViewerScreen>
                 state.maybeWhen(
                   storiesLoaded: (stories) {
                     if (stories.isNotEmpty) {
+                      final resources = sl<ResourceManager>();
+                      for (final story in stories) {
+                        final url = story.audioUrl?.trim() ?? '';
+                        if (url.startsWith('http')) {
+                          resources.downloadAndCacheInBackground(
+                            url,
+                            folder: 'audio',
+                          );
+                        }
+                      }
                       setState(() {
                         _stories = stories;
                         _currentIndex = 0;
@@ -535,8 +740,11 @@ class _ChildStoryViewerScreenState extends State<ChildStoryViewerScreen>
                                   // Back Button (Right)
                                   GestureDetector(
                                     onTap: () {
-                                      _stopPlayback();
-                                      context.pop();
+                                      ChildButtonVoice.press('رجوع', () async {
+                                        _stopPlayback();
+                                        if (!context.mounted) return;
+                                        context.pop();
+                                      }, single: true);
                                     },
                                     child: Container(
                                       padding: const EdgeInsets.symmetric(
@@ -618,9 +826,9 @@ class _ChildStoryViewerScreenState extends State<ChildStoryViewerScreen>
 
                         // Interactive Tap Areas & 3D Character
                         Expanded(
-                          child: ValueListenableBuilder<Duration>(
-                            valueListenable: _positionNotifier,
-                            builder: (context, position, child) {
+                          child: Builder(
+                            builder: (context) {
+                              final position = _positionNotifier.value;
                               String activeChar = story.characterName;
                               CharacterMotion? activeMotion;
                               var showHat = false;
@@ -704,6 +912,7 @@ class _ChildStoryViewerScreenState extends State<ChildStoryViewerScreen>
                                                   hatColor: hatColor,
                                                   showGlasses: showGlasses,
                                                   showMuscles: showMuscles,
+                                                  cameraFit: 1.45,
                                                   onReady: () => _onCharacterReady(_sceneGeneration),
                                                 ),
                                               ),
@@ -749,7 +958,13 @@ class _ChildStoryViewerScreenState extends State<ChildStoryViewerScreen>
                                               bottom: 0,
                                               width: 50,
                                               child: GestureDetector(
-                                                onTap: _currentIndex > 0 ? _previousStory : null,
+                                                onTap: _currentIndex > 0
+                                                    ? () {
+                                                        ChildButtonVoice.press('السابق', () async {
+                                                          _previousStory();
+                                                        }, single: true);
+                                                      }
+                                                    : null,
                                                 child: Container(
                                                   decoration: BoxDecoration(
                                                     gradient: LinearGradient(
@@ -781,7 +996,11 @@ class _ChildStoryViewerScreenState extends State<ChildStoryViewerScreen>
                                               bottom: 0,
                                               width: 50,
                                               child: GestureDetector(
-                                                onTap: _nextStory,
+                                                onTap: () {
+                                                  ChildButtonVoice.press('التالي', () async {
+                                                    _nextStory();
+                                                  }, single: true);
+                                                },
                                                 child: Container(
                                                   decoration: BoxDecoration(
                                                     gradient: LinearGradient(
@@ -837,7 +1056,11 @@ class _ChildStoryViewerScreenState extends State<ChildStoryViewerScreen>
                                             color: AppColors.secondary,
                                             size: 28,
                                           ),
-                                          onPressed: _restartMission,
+                                          onPressed: () {
+                                            ChildButtonVoice.press('إعادة', () async {
+                                              _restartMission();
+                                            }, single: true);
+                                          },
                                         ),
                                         const SizedBox(width: 24),
                                         // Play/Pause Button
@@ -853,7 +1076,12 @@ class _ChildStoryViewerScreenState extends State<ChildStoryViewerScreen>
                                             color: AppColors.secondary,
                                             size: 32,
                                           ),
-                                          onPressed: _togglePlayPause,
+                                          onPressed: () {
+                                            final playing = (_audioPlayer != null && !_hasAudio ? _playRequested : _isPlaying);
+                                            ChildButtonVoice.press(playing ? 'إيقاف' : 'تشغيل', () async {
+                                              _togglePlayPause();
+                                            });
+                                          },
                                         ),
                                         const SizedBox(width: 24),
                                         // Mute Button
@@ -867,7 +1095,11 @@ class _ChildStoryViewerScreenState extends State<ChildStoryViewerScreen>
                                               color: AppColors.secondary,
                                               size: 28,
                                             ),
-                                            onPressed: _toggleMute,
+                                            onPressed: () {
+                                              ChildButtonVoice.press(_isMuted ? 'تشغيل الصوت' : 'كتم الصوت', () async {
+                                                _toggleMute();
+                                              });
+                                            },
                                           )
                                         else
                                           const SizedBox(width: 44),
@@ -885,7 +1117,14 @@ class _ChildStoryViewerScreenState extends State<ChildStoryViewerScreen>
                                       width: double.infinity,
                                       height: 56,
                                       child: FilledButton(
-                                        onPressed: _nextStory,
+                                        onPressed: () {
+                                          final label = _currentIndex < _stories.length - 1
+                                              ? 'متابعة المشهد'
+                                              : 'إنهاء القصة والتحدي';
+                                          ChildButtonVoice.press(label, () async {
+                                            _nextStory();
+                                          }, single: true);
+                                        },
                                         style: FilledButton.styleFrom(
                                           backgroundColor:
                                               CharacterHelper.getColor(

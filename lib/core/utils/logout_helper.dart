@@ -3,8 +3,9 @@ import 'package:go_router/go_router.dart';
 import '../di/injection_container.dart';
 import '../../features/auth/data/datasources/auth_local_data_source.dart';
 import '../theme/app_colors.dart';
+import '../audio/child_button_voice.dart';
 
-void showLogoutBottomSheet(BuildContext context) {
+void showLogoutBottomSheet(BuildContext context, {bool readAloud = false}) {
   showModalBottomSheet(
     context: context,
     shape: const RoundedRectangleBorder(
@@ -55,10 +56,18 @@ void showLogoutBottomSheet(BuildContext context) {
                         ),
                       ),
                       onPressed: () async {
-                        final localDataSource = sl<AuthLocalDataSource>();
-                        await localDataSource.clearCache();
-                        if (context.mounted) {
-                           context.go('/role-selection');
+                        Future<void> leave() async {
+                          final localDataSource = sl<AuthLocalDataSource>();
+                          await localDataSource.clearCache();
+                          if (context.mounted) {
+                            context.go('/role-selection');
+                          }
+                        }
+
+                        if (readAloud) {
+                          await ChildButtonVoice.press('خروج', leave, single: true);
+                        } else {
+                          await leave();
                         }
                       },
                       child: const Text('خروج', style: TextStyle(fontWeight: FontWeight.bold,color: Colors.white)),

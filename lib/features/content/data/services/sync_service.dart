@@ -76,6 +76,27 @@ class SyncService {
     return DateTime.now().difference(last) >= syncFreshFor;
   }
 
+  /// Downloads story audio that is already known locally. Splash starts this
+  /// and continues to the dashboard without waiting for the files.
+  void prefetchCachedStoryAudio() {
+    unawaited(_prefetchCachedStoryAudio());
+  }
+
+  Future<void> _prefetchCachedStoryAudio() async {
+    try {
+      final stories = await localDataSource.getAllCachedStories();
+      await Future.wait(
+        stories.map((story) {
+          final url = story.audioUrl?.trim() ?? '';
+          if (!url.startsWith('http')) return Future<void>.value();
+          return resourceManager.downloadAndCacheFile(url, folder: 'audio');
+        }),
+      );
+    } catch (error) {
+      debugPrint('Story audio prefetch failed: $error');
+    }
+  }
+
   void startAutoSyncListener({String? childId}) {
     _networkSubscription?.cancel();
     _networkSubscription = connectionChecker.onStatusChange.listen((status) {

@@ -134,7 +134,7 @@ class ResourceManager {
       final response = await http
           .get(Uri.parse(cleanUrl))
           .timeout(const Duration(seconds: 30));
-      if (response.statusCode == 200) {
+      if (response.statusCode == 200 && _looksLikeAudio(response.bodyBytes)) {
         await file.writeAsBytes(response.bodyBytes);
         await cacheBox.put(cleanUrl, file.path);
         _verifiedLocalPaths.add(file.path);
@@ -144,6 +144,31 @@ class ResourceManager {
       // Failed to download or save, continue silently
     }
     return null;
+  }
+
+  Future<void> invalidate(String url) async {
+    final cleanUrl = url.trim();
+    final cachedPath = cacheBox.get(cleanUrl) as String?;
+    _verifiedLocalPaths.remove(cachedPath);
+    await cacheBox.delete(cleanUrl);
+    if (cachedPath == null) return;
+    final file = File(cachedPath);
+    if (await file.exists()) await file.delete();
+  }
+
+  bool _looksLikeAudio(List<int> bytes) {
+    if (bytes.length < 12) return false;
+    final riff = bytes[0] == 0x52 &&
+        bytes[1] == 0x49 &&
+        bytes[2] == 0x46 &&
+        bytes[3] == 0x46;
+    final id3 = bytes[0] == 0x49 && bytes[1] == 0x44 && bytes[2] == 0x33;
+    final mp3 = bytes[0] == 0xFF && (bytes[1] & 0xE0) == 0xE0;
+    final m4a = bytes[4] == 0x66 &&
+        bytes[5] == 0x74 &&
+        bytes[6] == 0x79 &&
+        bytes[7] == 0x70;
+    return riff || id3 || mp3 || m4a;
   }
 
   /// Fire-and-forget download in background without awaiting.

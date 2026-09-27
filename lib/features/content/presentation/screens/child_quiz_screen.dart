@@ -10,6 +10,7 @@ import '../bloc/content_event.dart';
 import '../bloc/content_state.dart';
 import '../../../auth/data/datasources/auth_local_data_source.dart';
 import '../../../../core/widgets/shimmer_loading.dart';
+import '../../../../core/audio/child_button_voice.dart';
 
 class ChildQuizScreen extends StatefulWidget {
   final MissionEntity mission;
@@ -118,6 +119,15 @@ class _ChildQuizScreenState extends State<ChildQuizScreen> {
             ),
           ),
           foregroundColor: const Color(0xFF2C3E50),
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back_ios_rounded),
+            onPressed: () {
+              ChildButtonVoice.press('رجوع', () async {
+                if (!context.mounted) return;
+                context.pop();
+              }, single: true);
+            },
+          ),
         ),
         body: Container(
           color: Colors.white,
@@ -222,8 +232,11 @@ class _ChildQuizScreenState extends State<ChildQuizScreen> {
                             
                             return GestureDetector(
                               onTap: () {
-                                setState(() {
-                                  _selectedIndex = index;
+                                ChildButtonVoice.press(opt, () async {
+                                  if (!mounted) return;
+                                  setState(() {
+                                    _selectedIndex = index;
+                                  });
                                 });
                               },
                               child: AnimatedContainer(
@@ -282,7 +295,11 @@ class _ChildQuizScreenState extends State<ChildQuizScreen> {
                         width: double.infinity,
                         height: 56,
                         child: FilledButton.icon(
-                          onPressed: _selectedIndex == null ? null : () => _submitAnswer(currentQ.correctAnswerIndex, questions.length),
+                          onPressed: _selectedIndex == null ? null : () {
+                            ChildButtonVoice.press('إرسال الإجابة', () async {
+                              _submitAnswer(currentQ.correctAnswerIndex, questions.length);
+                            }, single: true);
+                          },
                           icon: const Icon(Icons.check_circle_rounded),
                           label: const Text('إرسال الإجابة', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
                           style: FilledButton.styleFrom(

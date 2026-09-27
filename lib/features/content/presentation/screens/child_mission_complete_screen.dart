@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../../core/audio/child_button_voice.dart';
 import '../../domain/entities/mission_entity.dart';
 
 class ChildMissionCompleteScreen extends StatelessWidget {
@@ -143,7 +144,10 @@ class ChildMissionCompleteScreen extends StatelessWidget {
                   height: 56,
                   child: FilledButton.icon(
                     onPressed: () {
-                      context.push('/child/badges');
+                      ChildButtonVoice.press('رؤية أوسمتي', () async {
+                        if (!context.mounted) return;
+                        context.push('/child/badges');
+                      }, single: true);
                     },
                     icon: const Icon(
                       Icons.workspace_premium_rounded,
@@ -180,7 +184,10 @@ class ChildMissionCompleteScreen extends StatelessWidget {
                   height: 56,
                   child: OutlinedButton(
                     onPressed: () {
-                      context.go('/child-dashboard');
+                      ChildButtonVoice.press('العودة للرئيسية', () async {
+                        if (!context.mounted) return;
+                        context.go('/child-dashboard');
+                      }, single: true);
                     },
                     style: OutlinedButton.styleFrom(
                       side: const BorderSide(

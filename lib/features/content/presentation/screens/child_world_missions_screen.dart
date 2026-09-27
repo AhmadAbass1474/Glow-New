@@ -14,6 +14,7 @@ import '../bloc/content_state.dart';
 import '../../../auth/data/datasources/auth_local_data_source.dart';
 import '../../domain/repositories/content_repository.dart';
 import '../../../../core/widgets/shimmer_loading.dart';
+import '../../../../core/audio/child_button_voice.dart';
 import '../../../../core/services/character_asset_cache.dart';
 
 class ChildWorldMissionsScreen extends StatefulWidget {
@@ -95,6 +96,15 @@ class _ChildWorldMissionsScreenState extends State<ChildWorldMissionsScreen> {
             ),
           ),
           foregroundColor: const Color(0xFF2C3E50),
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back_ios_rounded),
+            onPressed: () {
+              ChildButtonVoice.press('رجوع', () async {
+                if (!context.mounted) return;
+                context.pop();
+              }, single: true);
+            },
+          ),
         ),
         body: Container(
           decoration: const BoxDecoration(
@@ -146,13 +156,14 @@ class _ChildWorldMissionsScreenState extends State<ChildWorldMissionsScreen> {
                           child: GestureDetector(
                             onTap: isUnlocked ? () {
                               HapticFeedback.lightImpact();
-                              context.push('/child/story-viewer', extra: mission).then((_) {
-                                // Refresh progress when returning
+                              ChildButtonVoice.press(mission.title, () async {
+                                if (!context.mounted) return;
+                                await context.push('/child/story-viewer', extra: mission);
                                 if (mounted) {
                                   setState(() => _isLoadingProgress = true);
                                   _fetchProgress();
                                 }
-                              });
+                              }, single: true);
                             } : null,
                             child: Container(
                               margin: const EdgeInsets.only(bottom: 12),

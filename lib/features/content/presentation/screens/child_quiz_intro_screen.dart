@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../../core/audio/child_button_voice.dart';
 import '../../domain/entities/mission_entity.dart';
 
 class ChildQuizIntroScreen extends StatelessWidget {
@@ -81,7 +82,10 @@ class ChildQuizIntroScreen extends StatelessWidget {
                   height: 56,
                   child: FilledButton.icon(
                     onPressed: () {
-                      context.pushReplacement('/child/quiz', extra: mission);
+                      ChildButtonVoice.press('اختبر نفسك', () async {
+                        if (!context.mounted) return;
+                        context.pushReplacement('/child/quiz', extra: mission);
+                      }, single: true);
                     },
                     icon: const Icon(Icons.rocket_launch_rounded, size: 24),
                     label: const Text(

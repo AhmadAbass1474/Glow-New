@@ -142,9 +142,11 @@ class ContentRemoteDataSourceImpl implements ContentRemoteDataSource {
     if (audioFile != null) {
       final ext = audioFile.path.split('.').last;
       final fileName = '${DateTime.now().millisecondsSinceEpoch}_audio.$ext';
-      await supabaseClient.storage
-          .from('story_audio')
-          .upload(fileName, audioFile);
+      await supabaseClient.storage.from('story_audio').upload(
+            fileName,
+            audioFile,
+            fileOptions: FileOptions(contentType: _audioContentType(ext)),
+          );
       audioUrl = supabaseClient.storage
           .from('story_audio')
           .getPublicUrl(fileName);
@@ -207,9 +209,11 @@ class ContentRemoteDataSourceImpl implements ContentRemoteDataSource {
     if (audioFile != null) {
       final ext = audioFile.path.split('.').last;
       final fileName = '${DateTime.now().millisecondsSinceEpoch}_audio.$ext';
-      await supabaseClient.storage
-          .from('story_audio')
-          .upload(fileName, audioFile);
+      await supabaseClient.storage.from('story_audio').upload(
+            fileName,
+            audioFile,
+            fileOptions: FileOptions(contentType: _audioContentType(ext)),
+          );
       audioUrl = supabaseClient.storage
           .from('story_audio')
           .getPublicUrl(fileName);
@@ -363,5 +367,18 @@ class ContentRemoteDataSourceImpl implements ContentRemoteDataSource {
         .order('completed_at', ascending: false);
 
     return response.map((json) => ChildProgressModel.fromJson(json)).toList();
+  }
+}
+
+String _audioContentType(String ext) {
+  switch (ext.toLowerCase()) {
+    case 'wav':
+      return 'audio/wav';
+    case 'm4a':
+      return 'audio/mp4';
+    case 'ogg':
+      return 'audio/ogg';
+    default:
+      return 'audio/mpeg';
   }
 }

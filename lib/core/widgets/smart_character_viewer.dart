@@ -28,6 +28,7 @@ class SmartCharacterViewer extends StatelessWidget {
     this.hatColor = const Color(0xFF2C2C2E),
     this.showMuscles = false,
     this.showGlasses = false,
+    this.cameraFit = 1.10,
     this.onReady,
   });
   final String characterName;
@@ -42,6 +43,7 @@ class SmartCharacterViewer extends StatelessWidget {
   final Color hatColor;
   final bool showMuscles;
   final bool showGlasses;
+  final double cameraFit;
   final VoidCallback? onReady;
 
   @override
@@ -62,6 +64,7 @@ class SmartCharacterViewer extends StatelessWidget {
         hatColor: hatColor,
         showMuscles: showMuscles,
         showGlasses: showGlasses,
+        cameraFit: cameraFit,
         motion: motion,
         playbackPosition: playbackPosition,
         onReady: onReady,
@@ -267,6 +270,7 @@ class _CharacterSurfaceState extends State<_CharacterSurface>
     _orbit = three.OrbitControls(view.camera, view.globalKey)
       ..enabled = config.interactive
       ..enablePan = false
+      ..enableZoom = false
       ..enableDamping = true
       ..minDistance = 3
       ..maxDistance = 16;
@@ -318,7 +322,7 @@ class _CharacterSurfaceState extends State<_CharacterSurface>
     final distance =
         math.max(3.5, _modelWidth / aspect) /
         (2 * math.tan(38 * math.pi / 360)) *
-        1.02;
+        config.cameraFit;
     camera.position.setValues(0.32, 2.06, distance);
     camera.lookAt(three.Vector3(0, 1.78, 0));
   }
@@ -545,7 +549,10 @@ class _CharacterSurfaceState extends State<_CharacterSurface>
   void didUpdateWidget(covariant _CharacterSurface oldWidget) {
     super.didUpdateWidget(oldWidget);
     final old = oldWidget.configuration;
-    if (oldWidget.size != widget.size) _fitCamera();
+    if (oldWidget.size != widget.size ||
+        old.cameraFit != config.cameraFit) {
+      _fitCamera();
+    }
     if (old.characterName != config.characterName) {
       _recolor();
       if (_ready) {

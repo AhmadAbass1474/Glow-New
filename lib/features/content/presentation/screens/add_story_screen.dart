@@ -17,6 +17,38 @@ import '../../../content/presentation/bloc/content_state.dart';
 import '../../../../core/utils/character_helper.dart';
 import '../../../../core/models/story_timeline.dart';
 import '../../../../core/widgets/story_timeline_editor.dart';
+import '../../../../core/audio/story_sentence_voice.dart';
+
+class _SentenceLine {
+  _SentenceLine() {
+    controller.addListener(_onText);
+  }
+
+  final controller = TextEditingController();
+  String characterId = 'fort';
+  String spokenText = '';
+  File? audio;
+  double seconds = 0;
+  bool busy = false;
+
+  void _onText() {
+    if (audio != null && controller.text.trim() != spokenText) {
+      audio = null;
+      seconds = 0;
+      spokenText = '';
+    }
+  }
+
+  void dispose() => controller.dispose();
+}
+
+const _sceneCharacters = <(String, String)>[
+  ('fort', 'فورت'),
+  ('lort', 'لورت'),
+  ('mort', 'مورت'),
+  ('port', 'بورت'),
+  ('qort', 'كورت'),
+];
 
 class AddStoryScreen extends StatefulWidget {
   final MissionEntity mission;
@@ -39,7 +71,12 @@ class _AddStoryScreenState extends State<AddStoryScreen> {
   late ContentBloc _contentBloc;
   
   AudioPlayer? _audioPlayer;
+  AudioPlayer? _linePlayer;
   bool _isPlaying = false;
+  int _step = 0;
+  bool _joining = false;
+  String? _sceneSignature;
+  final List<_SentenceLine> _lines = [];
   final ValueNotifier<Duration> _positionNotifier = ValueNotifier(Duration.zero);
   Duration _totalDuration = Duration.zero;
   StreamSubscription? _playerStateSubscription;
@@ -69,11 +106,15 @@ class _AddStoryScreenState extends State<AddStoryScreen> {
   void dispose() {
     _titleController.dispose();
     _contentController.dispose();
+    for (final line in _lines) {
+      line.dispose();
+    }
     _contentBloc.close();
     _playerStateSubscription?.cancel();
     _durationSubscription?.cancel();
     _positionSubscription?.cancel();
     _audioPlayer?.dispose();
+    _linePlayer?.dispose();
     _positionNotifier.dispose();
     super.dispose();
   }
@@ -338,6 +379,181 @@ class _AddStoryScreenState extends State<AddStoryScreen> {
     }
   }
 
+  void _addLine() {
+    final line = _SentenceLine();
+    line.controller.addListener(() {
+      if (mounted) setState(() {});
+    });
+    setState(() => _lines.add(line));
+  }
+
+  Future<void> _playLine(File file) async {
+    _linePlayer ??= AudioPlayer();
+    await _linePlayer!.stop();
+    await _linePlayer!.setVolume(1);
+    await _linePlayer!.play(DeviceFileSource(file.path));
+  }
+
+  Future<void> _speakLine(_SentenceLine line) async {
+    final text = line.controller.text.trim();
+    if (text.isEmpty || line.busy) return;
+    if (line.audio != null && line.spokenText == text) {
+      await _playLine(line.audio!);
+      return;
+    }
+    setState(() => line.busy = true);
+    try {
+      final clip = await StorySentenceVoice.speak(
+        characterId: line.characterId,
+        text: text,
+      );
+      if (!mounted) return;
+      setState(() {
+        line.audio = clip.file;
+        line.seconds = clip.seconds;
+        line.spokenText = text;
+        line.busy = false;
+      });
+      await _playLine(clip.file);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => line.busy = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تعذر توليد صوت هذه الجملة. حاول مرة أخرى.')),
+      );
+    }
+  }
+
+  Future<void> _openTimeline() async {
+    if (_joining) return;
+    final ready = _lines.where((line) => line.controller.text.trim().isNotEmpty).toList();
+    if (_titleController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('اكتب عنوان القصة أولاً')),
+      );
+      return;
+    }
+    if (ready.isEmpty || ready.any((line) => line.audio == null || line.seconds <= 0)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('ولّد صوت كل جملة قبل التالي')),
+      );
+      return;
+    }
+
+    final signature = ready
+        .map((line) => '${line.characterId}|${line.spokenText}|${line.seconds}')
+        .join('\n');
+    if (signature == _sceneSignature && _audioFile != null && _timeline != null) {
+      setState(() => _step = 1);
+      return;
+    }
+
+    setState(() => _joining = true);
+    try {
+      final merged = await StorySentenceVoice.join(ready.map((line) => line.audio!).toList());
+      final spoken = ready.fold<double>(0, (sum, line) => sum + line.seconds);
+      final scale = spoken > 0 ? merged.seconds / spoken : 1.0;
+      var cursor = 0.0;
+      final blocks = <StoryBlock>[];
+      for (final line in ready) {
+        final end = cursor + (line.seconds * scale);
+        blocks.add(
+          StoryBlock(
+            characterId: line.characterId,
+            startTime: cursor,
+            endTime: end,
+          ),
+        );
+        cursor = end;
+      }
+      if (blocks.isNotEmpty) {
+        final last = blocks.last;
+        blocks[blocks.length - 1] = StoryBlock(
+          characterId: last.characterId,
+          startTime: last.startTime,
+          endTime: merged.seconds,
+        );
+      }
+      _contentController.text = ready.map((line) => line.controller.text.trim()).join('\n');
+      _timeline = StoryTimeline(blocks: blocks, totalDuration: merged.seconds);
+      _audioFile = merged.file;
+      _sceneSignature = signature;
+      await _initAudio(DeviceFileSource(merged.file.path));
+      if (!mounted) return;
+      setState(() => _step = 1);
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تعذر تجهيز المشهد. حاول مرة أخرى.')),
+      );
+    } finally {
+      if (mounted) setState(() => _joining = false);
+    }
+  }
+
+  Widget _sentenceRow(_SentenceLine line, int index) {
+    final ready = line.audio != null;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          TextFormField(
+            controller: line.controller,
+            maxLines: 2,
+            decoration: InputDecoration(hintText: 'الجملة ${index + 1}'),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: DropdownButtonFormField<String>(
+                  value: line.characterId,
+                  decoration: const InputDecoration(isDense: true),
+                  items: [
+                    for (final character in _sceneCharacters)
+                      DropdownMenuItem(
+                        value: character.$1,
+                        child: Text(
+                          character.$2,
+                          style: TextStyle(
+                            color: CharacterHelper.getColor(character.$1),
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                  ],
+                  onChanged: line.busy
+                      ? null
+                      : (value) {
+                          if (value == null || value == line.characterId) return;
+                          setState(() {
+                            line.characterId = value;
+                            line.audio = null;
+                            line.seconds = 0;
+                            line.spokenText = '';
+                          });
+                        },
+                ),
+              ),
+              const SizedBox(width: 8),
+              FilledButton.tonal(
+                onPressed: line.busy ? null : () => _speakLine(line),
+                child: line.busy
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : Text(ready ? 'اسمع' : 'اعمل الصوت'),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   void _submit() {
     if (_formKey.currentState!.validate()) {
       String charName = 'qort'; // Default character
@@ -393,10 +609,15 @@ class _AddStoryScreenState extends State<AddStoryScreen> {
       child: Scaffold(
         backgroundColor: Theme.of(context).colorScheme.surface,
         appBar: AppBar(
+          leading: widget.storyToEdit == null && _step == 1
+              ? BackButton(onPressed: () => setState(() => _step = 0))
+              : null,
           title: Text(
             widget.storyToEdit != null
                 ? 'تعديل القصة'
-                : 'إضافة قصة لـ: ${widget.mission.title}',
+                : _step == 0
+                    ? 'كتابة المشهد'
+                    : 'المونتاج',
           ),
           elevation: 0,
           surfaceTintColor: Colors.white,
@@ -427,10 +648,11 @@ class _AddStoryScreenState extends State<AddStoryScreen> {
             );
           },
           builder: (context, state) {
-            final isLoading = state.maybeWhen(
-              loading: () => true,
-              orElse: () => false,
-            );
+            final isLoading = _joining ||
+                state.maybeWhen(
+                  loading: () => true,
+                  orElse: () => false,
+                );
 
             return SafeArea(
               child: Padding(
@@ -442,18 +664,73 @@ class _AddStoryScreenState extends State<AddStoryScreen> {
                       Expanded(
                         child: ListView(
                           children: [
-
-                            if (_audioFile == null)
-                              TextFormField(
-                                readOnly: true,
-                                onTap: _pickAudio,
-                                decoration: const InputDecoration(
-                                  hintText: 'إرفاق ملف صوتي',
+                            if (widget.storyToEdit != null) ...[
+                              if (_audioFile == null)
+                                TextFormField(
+                                  readOnly: true,
+                                  onTap: _pickAudio,
+                                  decoration: const InputDecoration(
+                                    hintText: 'إرفاق ملف صوتي',
+                                  ),
                                 ),
+                              if (_audioFile != null) ...[
+                                const SizedBox(height: 16),
+                                StoryTimelineEditor(
+                                  audioFile: _audioFile!,
+                                  initialTimeline: _timeline,
+                                  positionNotifier: _positionNotifier,
+                                  audioPlayer: _audioPlayer,
+                                  isPlaying: _isPlaying,
+                                  onTogglePlay: _togglePlayPause,
+                                  onTimelineChanged: (val) {
+                                    setState(() => _timeline = val);
+                                  },
+                                ),
+                              ],
+                              const SizedBox(height: 24),
+                              TextFormField(
+                                controller: _titleController,
+                                decoration: const InputDecoration(
+                                  hintText: 'عنوان القصة',
+                                ),
+                                validator: (val) =>
+                                    val == null || val.isEmpty ? 'مطلوب' : null,
                               ),
-                            if (_audioFile != null) ...[
                               const SizedBox(height: 16),
+                              TextFormField(
+                                controller: _contentController,
+                                decoration: const InputDecoration(
+                                  hintText: 'محتوى القصة',
+                                ),
+                                maxLines: 4,
+                                validator: (val) =>
+                                    val == null || val.isEmpty ? 'مطلوب' : null,
+                              ),
+                            ] else if (_step == 0) ...[
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: TextFormField(
+                                      controller: _titleController,
+                                      decoration: const InputDecoration(
+                                        hintText: 'عنوان القصة',
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  IconButton.filledTonal(
+                                    onPressed: _addLine,
+                                    icon: const Icon(Icons.add),
+                                    tooltip: 'إضافة جملة',
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 16),
+                              for (var i = 0; i < _lines.length; i++)
+                                _sentenceRow(_lines[i], i),
+                            ] else if (_audioFile != null) ...[
                               StoryTimelineEditor(
+                                key: ValueKey(_audioFile!.path),
                                 audioFile: _audioFile!,
                                 initialTimeline: _timeline,
                                 positionNotifier: _positionNotifier,
@@ -465,25 +742,6 @@ class _AddStoryScreenState extends State<AddStoryScreen> {
                                 },
                               ),
                             ],
-                            const SizedBox(height: 24),
-                            TextFormField(
-                              controller: _titleController,
-                              decoration: const InputDecoration(
-                                hintText: 'عنوان القصة',
-                              ),
-                              validator: (val) =>
-                                  val == null || val.isEmpty ? 'مطلوب' : null,
-                            ),
-                            const SizedBox(height: 16),
-                            TextFormField(
-                              controller: _contentController,
-                              decoration: const InputDecoration(
-                                hintText: 'محتوى القصة',
-                              ),
-                              maxLines: 4,
-                              validator: (val) =>
-                                  val == null || val.isEmpty ? 'مطلوب' : null,
-                            ),
                           ],
                         ),
                       ),
@@ -491,7 +749,11 @@ class _AddStoryScreenState extends State<AddStoryScreen> {
                       SizedBox(
                         width: double.infinity,
                         child: FilledButton(
-                          onPressed: isLoading ? null : _submit,
+                          onPressed: isLoading
+                              ? null
+                              : widget.storyToEdit == null && _step == 0
+                                  ? _openTimeline
+                                  : _submit,
                           style: FilledButton.styleFrom(
                             padding: const EdgeInsets.symmetric(vertical: 16),
                           ),
@@ -507,7 +769,9 @@ class _AddStoryScreenState extends State<AddStoryScreen> {
                               : Text(
                                   widget.storyToEdit != null
                                       ? 'تحديث القصة'
-                                      : 'نشر القصة الآن',
+                                      : _step == 0
+                                          ? 'التالي'
+                                          : 'نشر القصة الآن',
                                   style: const TextStyle(
                                     fontSize: 18,
                                     fontWeight: FontWeight.bold,

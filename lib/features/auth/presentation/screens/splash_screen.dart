@@ -64,7 +64,9 @@ class _SplashScreenState extends State<SplashScreen> {
     }
 
     if (cachedChild != null) {
+      sl<SyncService>().prefetchCachedStoryAudio();
       await _syncChildIfNeeded(cachedChild.id);
+      sl<SyncService>().prefetchCachedStoryAudio();
       if (mounted) context.go('/child-dashboard');
       return;
     }
@@ -92,6 +94,7 @@ class _SplashScreenState extends State<SplashScreen> {
           final child = ChildProfileModel.fromJson(data);
           await localDataSource.cacheChild(child);
           await _syncChildIfNeeded(child.id);
+          sl<SyncService>().prefetchCachedStoryAudio();
           if (mounted) {
             context.go('/child-dashboard');
             return;

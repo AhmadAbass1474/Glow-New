@@ -10,7 +10,7 @@ let active, ready = false, disposed = false, firstFrame = false, failed = false;
 let sampledFrames = 0, sampleStart = 0;
 let state = {
   motion: 'Idle', playing: true, speaking: false, visible: true, interactive: true,
-  skeleton: false, hat: true, hatColor: '#2c2c2e', muscles: false, glasses: false, originalGreen: true, color: '#22592a', position: 0,
+  skeleton: false, hat: true, hatColor: '#2c2c2e', muscles: false, glasses: false, cameraFit: 1.10, originalGreen: true, color: '#22592a', position: 0,
 };
 const actions = new Map(), eyes = [];
 const HAT_MATERIALS = new Set(['Hat', 'HatBand', 'HatTrim', 'HatSkin']);
@@ -235,7 +235,8 @@ function resize() {
   renderer.setPixelRatio(Math.max(1, Math.min(devicePixelRatio || 1, 3, 3072 / longSide)));
   renderer.setSize(w, h, false);
   camera.aspect = w / h; camera.updateProjectionMatrix();
-  const distance = Math.max(3.5, (model?.userData.frameWidth ?? 3.5) / camera.aspect) / (2 * Math.tan(38 * Math.PI / 360)) * 1.02;
+  const fit = Number(state.cameraFit) > 0 ? Number(state.cameraFit) : 1.10;
+  const distance = Math.max(3.5, (model?.userData.frameWidth ?? 3.5) / camera.aspect) / (2 * Math.tan(38 * Math.PI / 360)) * fit;
   camera.position.set(.32, 2.06, distance); controls?.update();
   draw();
 }
@@ -354,6 +355,7 @@ async function loadFromBase64(encoded) {
 function update(next) {
   const wasSpeaking = state.speaking;
   const seek = next.seek === true;
+  const fitChanged = next.cameraFit !== undefined && next.cameraFit !== state.cameraFit;
   const hatChanged = next.hat !== undefined || next.hatColor !== undefined || next.color !== undefined;
   const glassesChanged = next.glasses !== undefined;
   state = { ...state, ...next };
@@ -374,6 +376,7 @@ function update(next) {
       mixer.update(0);
     }
   }
+  if (fitChanged) resize();
   if (!state.visible) { cancelAnimationFrame(frame); frame = 0; last = 0; }
   else schedule();
 }
@@ -412,7 +415,7 @@ try {
   document.body.appendChild(renderer.domElement);
   renderer.domElement.addEventListener('webglcontextlost', event => { event.preventDefault(); fail(new Error('Graphics context lost')); });
   scene = new THREE.Scene(); camera = new THREE.PerspectiveCamera(38, 1, .05, 100);
-  controls = new OrbitControls(camera, renderer.domElement); controls.enablePan = false; controls.enableDamping = true; controls.minDistance = 3; controls.maxDistance = 16; controls.target.set(0, 1.78, 0);
+  controls = new OrbitControls(camera, renderer.domElement); controls.enablePan = false; controls.enableZoom = false; controls.enableDamping = true; controls.minDistance = 3; controls.maxDistance = 16; controls.target.set(0, 1.78, 0);
   controls.addEventListener('change', () => { if (!state.playing) { draw(); schedule(); } });
   scene.add(new THREE.HemisphereLight(0xeaf6ff, 0x8d8270, .85));
   const key = new THREE.DirectionalLight(0xfff2dc, 1.85); key.position.set(-3, 6, 6); scene.add(key);

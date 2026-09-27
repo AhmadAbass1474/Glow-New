@@ -30,6 +30,7 @@ class MobileCharacterViewer extends StatefulWidget {
     this.showHat = false,
     this.showMuscles = false,
     this.showGlasses = false,
+    this.cameraFit = 1.10,
     this.hatColor = const Color(0xFF2C2C2E),
     this.motion,
     this.playbackPosition,
@@ -41,6 +42,7 @@ class MobileCharacterViewer extends StatefulWidget {
   final bool showHat;
   final bool showMuscles;
   final bool showGlasses;
+  final double cameraFit;
   final Color hatColor;
   final CharacterMotion? motion;
   final ValueListenable<Duration>? playbackPosition;
@@ -275,6 +277,7 @@ class _MobileCharacterViewerState extends State<MobileCharacterViewer>
       'hat': widget.showHat,
       'muscles': widget.showMuscles,
       'glasses': widget.showGlasses,
+      'cameraFit': widget.cameraFit,
       'hatColor':
           '#${(widget.hatColor.toARGB32() & 0xFFFFFF).toRadixString(16).padLeft(6, '0')}',
       'visible': _visible,

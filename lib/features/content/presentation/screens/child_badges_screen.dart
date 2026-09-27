@@ -9,6 +9,7 @@ import '../bloc/content_event.dart';
 import '../bloc/content_state.dart';
 import '../../../auth/data/datasources/auth_local_data_source.dart';
 import '../../../../core/widgets/shimmer_loading.dart';
+import '../../../../core/audio/child_button_voice.dart';
 
 class ChildBadgesScreen extends StatefulWidget {
   const ChildBadgesScreen({super.key});
@@ -62,7 +63,12 @@ class _ChildBadgesScreenState extends State<ChildBadgesScreen> {
           foregroundColor: const Color(0xFF2C3E50),
           leading: IconButton(
             icon: const Icon(Icons.arrow_back_ios_rounded),
-            onPressed: () => context.pop(),
+            onPressed: () {
+              ChildButtonVoice.press('رجوع', () async {
+                if (!context.mounted) return;
+                context.pop();
+              }, single: true);
+            },
           ),
         ),
         body: Container(

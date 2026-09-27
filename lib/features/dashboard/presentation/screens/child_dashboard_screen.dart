@@ -20,6 +20,7 @@ import '../../../content/domain/repositories/content_repository.dart';
 import '../../../../core/utils/logout_helper.dart';
 import '../../../../core/widgets/custom_loader.dart';
 import '../../../../core/services/character_asset_cache.dart';
+import '../../../../core/audio/child_button_voice.dart';
 
 class ChildDashboardScreen extends StatefulWidget {
   const ChildDashboardScreen({super.key});
@@ -154,7 +155,9 @@ class _ChildDashboardScreenState extends State<ChildDashboardScreen> {
                     const SizedBox(width: 6),
                     InkWell(
                       onTap: () {
+                        ChildButtonVoice.press('نسخ الكود', () async {
                         Clipboard.setData(ClipboardData(text: _childCode!));
+                        if (!context.mounted) return;
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
                             content: const Text(
@@ -170,6 +173,7 @@ class _ChildDashboardScreenState extends State<ChildDashboardScreen> {
                             ),
                           ),
                         );
+                        }, single: true);
                       },
                       child: Icon(
                         Icons.copy_rounded,
@@ -238,9 +242,11 @@ class _ChildDashboardScreenState extends State<ChildDashboardScreen> {
                     // Badges
                     GestureDetector(
                       onTap: () {
-                        context
-                            .push('/child/badges')
-                            .then((_) => _fetchProgress());
+                        ChildButtonVoice.press('أوسمتي', () async {
+                          if (!context.mounted) return;
+                          await context.push('/child/badges');
+                          _fetchProgress();
+                        }, single: true);
                       },
                       child: Container(
                         decoration: BoxDecoration(
@@ -306,7 +312,12 @@ class _ChildDashboardScreenState extends State<ChildDashboardScreen> {
             Padding(
               padding: const EdgeInsets.only(left: 10),
               child: InkWell(
-                onTap: () => showLogoutBottomSheet(context),
+                onTap: () {
+                  ChildButtonVoice.press('تسجيل الخروج', () async {
+                    if (!context.mounted) return;
+                    showLogoutBottomSheet(context, readAloud: true);
+                  }, single: true);
+                },
                 child: const Icon(
                   Icons.more_vert,
                   color: Colors.black,
@@ -409,26 +420,36 @@ class _ChildDashboardScreenState extends State<ChildDashboardScreen> {
                                     child: GestureDetector(
                                       onTap: () {
                                         if (isLocked) {
-                                          ScaffoldMessenger.of(
-                                            context,
-                                          ).showSnackBar(
-                                            const SnackBar(
-                                              content: Text(
-                                                'أكمل العالم السابق لفتح هذا العالم!',
-                                              ),
-                                              behavior:
-                                                  SnackBarBehavior.floating,
-                                              backgroundColor: Colors.orange,
-                                            ),
-                                          );
                                           HapticFeedback.heavyImpact();
+                                          ChildButtonVoice.press(
+                                            'مغلق. أكمل العالم السابق',
+                                            () async {
+                                              if (!context.mounted) return;
+                                              ScaffoldMessenger.of(
+                                                context,
+                                              ).showSnackBar(
+                                                const SnackBar(
+                                                  content: Text(
+                                                    'أكمل العالم السابق لفتح هذا العالم!',
+                                                  ),
+                                                  behavior:
+                                                      SnackBarBehavior.floating,
+                                                  backgroundColor: Colors.orange,
+                                                ),
+                                              );
+                                            },
+                                            single: true,
+                                          );
                                           return;
                                         }
                                         HapticFeedback.lightImpact();
-                                        context.push(
-                                          '/child/world-missions',
-                                          extra: world,
-                                        );
+                                        ChildButtonVoice.press(world.title, () async {
+                                          if (!context.mounted) return;
+                                          context.push(
+                                            '/child/world-missions',
+                                            extra: world,
+                                          );
+                                        }, single: true);
                                       },
                                       child: Container(
                                         margin: const EdgeInsets.only(

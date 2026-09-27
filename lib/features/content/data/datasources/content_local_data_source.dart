@@ -19,6 +19,7 @@ abstract class ContentLocalDataSource {
   // Stories
   Future<void> cacheStories(String missionId, List<StoryModel> stories);
   Future<List<StoryModel>> getCachedStories(String missionId);
+  Future<List<StoryModel>> getAllCachedStories();
 
   // Questions
   Future<void> cacheQuestions(String missionId, List<QuestionModel> questions);
@@ -128,10 +129,26 @@ class ContentLocalDataSourceImpl implements ContentLocalDataSource {
   @override
   Future<List<StoryModel>> getCachedStories(String missionId) async {
     final raw = storiesBox.get('stories_$missionId') as String?;
+    return _decodeStories(raw);
+  }
+
+  @override
+  Future<List<StoryModel>> getAllCachedStories() async {
+    final stories = <StoryModel>[];
+    for (final key in storiesBox.keys) {
+      if (key is! String || !key.startsWith('stories_')) continue;
+      stories.addAll(_decodeStories(storiesBox.get(key) as String?));
+    }
+    return stories;
+  }
+
+  List<StoryModel> _decodeStories(String? raw) {
     if (raw == null || raw.isEmpty) return [];
     try {
       final list = json.decode(raw) as List;
-      return list.map((item) => StoryModel.fromJson(Map<String, dynamic>.from(item))).toList();
+      return list
+          .map((item) => StoryModel.fromJson(Map<String, dynamic>.from(item)))
+          .toList();
     } catch (_) {
       return [];
     }

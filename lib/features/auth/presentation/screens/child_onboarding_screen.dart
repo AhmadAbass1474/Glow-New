@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/widgets/smart_character_viewer.dart';
+import '../../../../core/audio/child_button_voice.dart';
 import '../../../../core/theme/app_colors.dart' show AppColors;
 import '../bloc/auth_bloc.dart';
 import '../bloc/auth_event.dart';
@@ -192,11 +193,15 @@ class _ChildOnboardingScreenState extends State<ChildOnboardingScreen> {
                     );
                     return;
                   }
-                  context.read<AuthBloc>().add(AuthEvent.registerChild(
-                    name: _nameController.text.trim(),
-                    age: _selectedAge,
-                    avatarUrl: _selectedAvatar,
-                  ));
+                  final name = _nameController.text.trim();
+                  ChildButtonVoice.press('انطلق', () async {
+                    if (!context.mounted) return;
+                    context.read<AuthBloc>().add(AuthEvent.registerChild(
+                      name: name,
+                      age: _selectedAge,
+                      avatarUrl: _selectedAvatar,
+                    ));
+                  }, single: true);
                 },
                 child: isLoading
                     ? const CircularProgressIndicator(color: Colors.white)
