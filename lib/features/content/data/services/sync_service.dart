@@ -1,12 +1,11 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:internet_connection_checker/internet_connection_checker.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../core/network/network_info.dart';
 import '../../../../core/services/resource_manager.dart';
 import '../datasources/content_local_data_source.dart';
 import '../datasources/content_remote_data_source.dart';
-import '../models/story_model.dart';
-import '../models/question_model.dart';
 
 enum SyncStatus { idle, syncing, success, offline, error }
 
@@ -31,6 +30,10 @@ class SyncService {
   final ResourceManager resourceManager;
   final NetworkInfo networkInfo;
   final InternetConnectionChecker connectionChecker;
+  final SharedPreferences preferences;
+
+  static const _lastSyncKey = 'glow_last_content_sync_ms';
+  static const syncFreshFor = Duration(hours: 6);
 
   final ValueNotifier<SyncStatusState> syncState = ValueNotifier<SyncStatusState>(
     const SyncStatusState(status: SyncStatus.idle, message: 'جاهز'),
@@ -45,7 +48,33 @@ class SyncService {
     required this.resourceManager,
     required this.networkInfo,
     required this.connectionChecker,
+    required this.preferences,
   });
+
+  /// True when local progress must be uploaded, content is missing,
+  /// or the last successful sync is older than [syncFreshFor].
+  Future<bool> needsSync() async {
+    final pending = await localDataSource.getPendingCompletions();
+    if (pending.isNotEmpty) return true;
+
+    final worlds = await localDataSource.getCachedWorlds();
+    if (worlds.isEmpty) return true;
+
+    final missions = await localDataSource.getAllCachedMissions();
+    if (missions.isEmpty) return true;
+
+    final lastMs = preferences.getInt(_lastSyncKey);
+    if (lastMs == null) {
+      await preferences.setInt(
+        _lastSyncKey,
+        DateTime.now().millisecondsSinceEpoch,
+      );
+      return false;
+    }
+
+    final last = DateTime.fromMillisecondsSinceEpoch(lastMs);
+    return DateTime.now().difference(last) >= syncFreshFor;
+  }
 
   void startAutoSyncListener({String? childId}) {
     _networkSubscription?.cancel();
@@ -169,6 +198,10 @@ class SyncService {
       }
 
       _lastSyncTime = DateTime.now();
+      await preferences.setInt(
+        _lastSyncKey,
+        _lastSyncTime!.millisecondsSinceEpoch,
+      );
 
       syncState.value = const SyncStatusState(
         status: SyncStatus.success,

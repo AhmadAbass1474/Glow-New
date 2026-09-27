@@ -48,6 +48,7 @@ dependencies:
   hive: ^2.2.3
   hive_flutter: ^1.1.0
   internet_connection_checker: ^3.0.1
+  connectivity_plus: ^6.1.5
   file_picker: ^12.3.0
   audioplayers: ^6.7.1
   path_provider: ^2.1.5

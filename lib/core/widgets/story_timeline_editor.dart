@@ -39,6 +39,7 @@ class _StoryTimelineEditorState extends State<StoryTimelineEditor> {
   List<StoryMotionBlock> _motionBlocks = [];
   List<StoryHatBlock> _hatBlocks = [];
   List<StoryGlassesBlock> _glassesBlocks = [];
+  List<StoryMusclesBlock> _musclesBlocks = [];
   bool _isLoading = true;
   
   double _pixelsPerSecond = 80.0;
@@ -63,14 +64,16 @@ class _StoryTimelineEditorState extends State<StoryTimelineEditor> {
   final GlobalKey _motionTrackKey = GlobalKey();
   final GlobalKey _hatTrackKey = GlobalKey();
   final GlobalKey _glassesTrackKey = GlobalKey();
+  final GlobalKey _musclesTrackKey = GlobalKey();
   final ScrollController _scrollController = ScrollController();
   
   int? _selectedBlockIndex;
   int? _selectedMotionBlockIndex;
   int? _selectedHatBlockIndex;
   int? _selectedGlassesBlockIndex;
+  int? _selectedMusclesBlockIndex;
   int _paletteCategory = 0;
-  static const _paletteCategoryNames = ['الشخصية', 'الحركة', 'القبعة', 'النظارة'];
+  static const _paletteCategoryNames = ['الشخصية', 'الحركة', 'القبعة', 'النظارة', 'العضلات'];
   String? _lastPreviewCharacter;
   String? _lastPreviewMotion;
 
@@ -90,6 +93,9 @@ class _StoryTimelineEditorState extends State<StoryTimelineEditor> {
       }
       if (widget.initialTimeline!.glassesBlocks.isNotEmpty) {
         _glassesBlocks = List.from(widget.initialTimeline!.glassesBlocks);
+      }
+      if (widget.initialTimeline!.musclesBlocks.isNotEmpty) {
+        _musclesBlocks = List.from(widget.initialTimeline!.musclesBlocks);
       }
     }
     _loadAudioDuration();
@@ -165,11 +171,13 @@ class _StoryTimelineEditorState extends State<StoryTimelineEditor> {
     _motionBlocks.sort((a, b) => a.startTime.compareTo(b.startTime));
     _hatBlocks.sort((a, b) => a.startTime.compareTo(b.startTime));
     _glassesBlocks.sort((a, b) => a.startTime.compareTo(b.startTime));
+    _musclesBlocks.sort((a, b) => a.startTime.compareTo(b.startTime));
     widget.onTimelineChanged(StoryTimeline(
       blocks: _blocks,
       motionBlocks: _motionBlocks,
       hatBlocks: _hatBlocks,
       glassesBlocks: _glassesBlocks,
+      musclesBlocks: _musclesBlocks,
       totalDuration: _totalDuration.inMilliseconds / 1000.0,
     ));
   }
@@ -236,6 +244,10 @@ class _StoryTimelineEditorState extends State<StoryTimelineEditor> {
     setState(() {
       _blocks = updatedBlocks;
       _selectedBlockIndex = _blocks.indexWhere((b) => b.startTime == timeInSeconds);
+      _selectedMotionBlockIndex = null;
+      _selectedHatBlockIndex = null;
+      _selectedGlassesBlockIndex = null;
+      _selectedMusclesBlockIndex = null;
     });
     _notifyChanged();
   }
@@ -353,6 +365,12 @@ class _StoryTimelineEditorState extends State<StoryTimelineEditor> {
         _selectedGlassesBlockIndex = null;
       });
       _notifyChanged();
+    } else if (_selectedMusclesBlockIndex != null) {
+      setState(() {
+        _musclesBlocks.removeAt(_selectedMusclesBlockIndex!);
+        _selectedMusclesBlockIndex = null;
+      });
+      _notifyChanged();
     }
   }
 
@@ -379,6 +397,13 @@ class _StoryTimelineEditorState extends State<StoryTimelineEditor> {
 
   bool _glassesOnAt(double time) {
     for (var b in _glassesBlocks) {
+      if (time >= b.startTime && time <= b.endTime) return true;
+    }
+    return false;
+  }
+
+  bool _musclesOnAt(double time) {
+    for (var b in _musclesBlocks) {
       if (time >= b.startTime && time <= b.endTime) return true;
     }
     return false;
@@ -423,6 +448,7 @@ class _StoryTimelineEditorState extends State<StoryTimelineEditor> {
       _selectedBlockIndex = null;
       _selectedHatBlockIndex = null;
       _selectedGlassesBlockIndex = null;
+      _selectedMusclesBlockIndex = null;
     });
     _notifyChanged();
   }
@@ -527,6 +553,8 @@ class _StoryTimelineEditorState extends State<StoryTimelineEditor> {
       _selectedHatBlockIndex = _hatBlocks.indexWhere((b) => b.startTime == timeInSeconds);
       _selectedBlockIndex = null;
       _selectedMotionBlockIndex = null;
+      _selectedGlassesBlockIndex = null;
+      _selectedMusclesBlockIndex = null;
     });
     _notifyChanged();
   }
@@ -620,6 +648,7 @@ class _StoryTimelineEditorState extends State<StoryTimelineEditor> {
       _selectedBlockIndex = null;
       _selectedMotionBlockIndex = null;
       _selectedHatBlockIndex = null;
+      _selectedMusclesBlockIndex = null;
     });
     _notifyChanged();
   }
@@ -675,6 +704,90 @@ class _StoryTimelineEditorState extends State<StoryTimelineEditor> {
     });
     _notifyChanged();
   }
+
+  void _addMusclesBlockAtTime(double timeInSeconds) {
+    final totalSeconds = _totalDuration.inMilliseconds / 1000.0;
+    if (totalSeconds == 0) return;
+    if (timeInSeconds < 0) timeInSeconds = 0;
+    double end = timeInSeconds + 3.0;
+    if (end > totalSeconds) end = totalSeconds;
+
+    final updated = <StoryMusclesBlock>[];
+    for (var b in _musclesBlocks) {
+      if (b.endTime <= timeInSeconds || b.startTime >= end) {
+        updated.add(b);
+      } else if (b.startTime < timeInSeconds && b.endTime > end) {
+        updated.add(StoryMusclesBlock(startTime: b.startTime, endTime: timeInSeconds));
+        updated.add(StoryMusclesBlock(startTime: end, endTime: b.endTime));
+      } else if (b.startTime < timeInSeconds && b.endTime <= end) {
+        updated.add(StoryMusclesBlock(startTime: b.startTime, endTime: timeInSeconds));
+      } else if (b.startTime >= timeInSeconds && b.endTime > end) {
+        updated.add(StoryMusclesBlock(startTime: end, endTime: b.endTime));
+      }
+    }
+    updated.add(StoryMusclesBlock(startTime: timeInSeconds, endTime: end));
+    setState(() {
+      _musclesBlocks = updated;
+      _selectedMusclesBlockIndex = _musclesBlocks.indexWhere((b) => b.startTime == timeInSeconds);
+      _selectedBlockIndex = null;
+      _selectedMotionBlockIndex = null;
+      _selectedHatBlockIndex = null;
+      _selectedGlassesBlockIndex = null;
+    });
+    _notifyChanged();
+  }
+
+  void _updateMusclesBlockStart(int index, double deltaSeconds) {
+    final block = _musclesBlocks[index];
+    double newStart = block.startTime + deltaSeconds;
+    if (newStart < 0) newStart = 0;
+    if (newStart > block.endTime - 0.5) newStart = block.endTime - 0.5;
+    if (index > 0 && newStart < _musclesBlocks[index - 1].endTime) {
+      newStart = _musclesBlocks[index - 1].endTime;
+    }
+    setState(() {
+      _musclesBlocks[index] = StoryMusclesBlock(startTime: newStart, endTime: block.endTime);
+    });
+    _notifyChanged();
+  }
+
+  void _updateMusclesBlockEnd(int index, double deltaSeconds) {
+    final block = _musclesBlocks[index];
+    double newEnd = block.endTime + deltaSeconds;
+    final totalSeconds = _totalDuration.inMilliseconds / 1000.0;
+    if (newEnd > totalSeconds) newEnd = totalSeconds;
+    if (newEnd < block.startTime + 0.5) newEnd = block.startTime + 0.5;
+    if (index < _musclesBlocks.length - 1 && newEnd > _musclesBlocks[index + 1].startTime) {
+      newEnd = _musclesBlocks[index + 1].startTime;
+    }
+    setState(() {
+      _musclesBlocks[index] = StoryMusclesBlock(startTime: block.startTime, endTime: newEnd);
+    });
+    _notifyChanged();
+  }
+
+  void _moveMusclesBlock(int index, double deltaSeconds) {
+    final block = _musclesBlocks[index];
+    final duration = block.endTime - block.startTime;
+    double newStart = block.startTime + deltaSeconds;
+    if (newStart < 0) newStart = 0;
+    final totalSeconds = _totalDuration.inMilliseconds / 1000.0;
+    if (newStart + duration > totalSeconds) newStart = totalSeconds - duration;
+    if (index > 0 && newStart < _musclesBlocks[index - 1].endTime) {
+      newStart = _musclesBlocks[index - 1].endTime;
+    }
+    if (index < _musclesBlocks.length - 1 &&
+        (newStart + duration) > _musclesBlocks[index + 1].startTime) {
+      newStart = _musclesBlocks[index + 1].startTime - duration;
+    }
+    setState(() {
+      _musclesBlocks[index] = StoryMusclesBlock(
+        startTime: newStart,
+        endTime: newStart + duration,
+      );
+    });
+    _notifyChanged();
+  }
   
   void _duplicateBlock() {
     if (_selectedBlockIndex != null) {
@@ -709,7 +822,8 @@ class _StoryTimelineEditorState extends State<StoryTimelineEditor> {
     final motionTop = characterTop + _trackHeight + _laneGap;
     final hatTop = motionTop + _trackHeight + _laneGap;
     final glassesTop = hatTop + _trackHeight + _laneGap;
-    final timelineHeight = glassesTop + _trackHeight + 10;
+    final musclesTop = glassesTop + _trackHeight + _laneGap;
+    final timelineHeight = musclesTop + _trackHeight + 10;
     final currentTime = (widget.positionNotifier?.value.inMilliseconds ?? 0) / 1000.0;
 
     // Dark Mode Theme Wrapper
@@ -759,6 +873,7 @@ class _StoryTimelineEditorState extends State<StoryTimelineEditor> {
                                     showHat: _getActiveHatAt(currentTime) != null,
                                     hatColor: _getActiveHatAt(currentTime)?.color ?? const Color(0xFF2C2C2E),
                                     showGlasses: _glassesOnAt(currentTime),
+                                    showMuscles: _musclesOnAt(currentTime),
                                   )
                                 : const Center(
                                     child: Text(
@@ -989,6 +1104,29 @@ class _StoryTimelineEditorState extends State<StoryTimelineEditor> {
                               ),
                             ],
                           ),
+                          if (_paletteCategory == 4)
+                          _PaletteLane(
+                            key: const ValueKey('muscles'),
+                            labeled: false,
+                            title: 'العضلات',
+                            children: [
+                              Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                                child: Draggable<String>(
+                                  data: StoryMusclesBlock.dragData,
+                                  feedback: Material(
+                                    color: Colors.transparent,
+                                    child: _musclesChip(false),
+                                  ),
+                                  childWhenDragging: Opacity(
+                                    opacity: 0.3,
+                                    child: _musclesChip(false),
+                                  ),
+                                  child: _musclesChip(_selectedMusclesBlockIndex != null),
+                                ),
+                              ),
+                            ],
+                          ),
                         ],
                         ),
                       ),
@@ -1036,7 +1174,8 @@ class _StoryTimelineEditorState extends State<StoryTimelineEditor> {
                         (_selectedBlockIndex != null ||
                                 _selectedMotionBlockIndex != null ||
                                 _selectedHatBlockIndex != null ||
-                                _selectedGlassesBlockIndex != null)
+                                _selectedGlassesBlockIndex != null ||
+                                _selectedMusclesBlockIndex != null)
                             ? _deleteBlock
                             : null,
                         isDestructive: true,
@@ -1291,6 +1430,50 @@ class _StoryTimelineEditorState extends State<StoryTimelineEditor> {
                               ),
                             ),
 
+                            // Muscles track, directly under the glasses track.
+                            Positioned(
+                              left: 0,
+                              top: musclesTop,
+                              width: trackWidth,
+                              height: _trackHeight,
+                              child: DragTarget<String>(
+                                onAcceptWithDetails: (details) {
+                                  if (!StoryMusclesBlock.isDrag(details.data)) return;
+                                  if (_musclesTrackKey.currentContext != null) {
+                                    final RenderBox box = _musclesTrackKey.currentContext!.findRenderObject() as RenderBox;
+                                    final Offset localOffset = box.globalToLocal(details.offset);
+                                    final double time = localOffset.dx / _pixelsPerSecond;
+                                    _addMusclesBlockAtTime(time);
+                                  }
+                                },
+                                builder: (context, candidateData, rejectedData) {
+                                  final canAccept = candidateData
+                                      .whereType<String>()
+                                      .any(StoryMusclesBlock.isDrag);
+                                  return Container(
+                                    key: _musclesTrackKey,
+                                    decoration: BoxDecoration(
+                                      color: canAccept ? AppColors.secondaryContainer : AppColors.background,
+                                      borderRadius: BorderRadius.circular(AppColors.border_radius),
+                                      border: Border.all(
+                                        color: canAccept ? AppColors.secondary : AppColors.inputBorder,
+                                        width: canAccept ? 2 : 1,
+                                      ),
+                                    ),
+                                    child: Stack(
+                                      clipBehavior: Clip.none,
+                                      children: [
+                                        if (_musclesBlocks.isEmpty) _trackHint('اسحب العضلات إلى هنا'),
+                                        ..._musclesBlocks.asMap().entries.map((entry) {
+                                          return _buildMusclesBlockWidget(entry.key, entry.value);
+                                        }),
+                                      ],
+                                    ),
+                                  );
+                                },
+                              ),
+                            ),
+
                             // Playhead
                             if (widget.positionNotifier != null)
                               Positioned(
@@ -1463,6 +1646,7 @@ class _StoryTimelineEditorState extends State<StoryTimelineEditor> {
             _selectedMotionBlockIndex = null;
             _selectedHatBlockIndex = null;
             _selectedGlassesBlockIndex = null;
+            _selectedMusclesBlockIndex = null;
           });
         },
         child: Stack(
@@ -1527,6 +1711,7 @@ class _StoryTimelineEditorState extends State<StoryTimelineEditor> {
             _selectedBlockIndex = null;
             _selectedHatBlockIndex = null;
             _selectedGlassesBlockIndex = null;
+            _selectedMusclesBlockIndex = null;
           });
         },
         child: Stack(
@@ -1592,6 +1777,7 @@ class _StoryTimelineEditorState extends State<StoryTimelineEditor> {
             _selectedBlockIndex = null;
             _selectedMotionBlockIndex = null;
             _selectedGlassesBlockIndex = null;
+            _selectedMusclesBlockIndex = null;
           });
         },
         child: Stack(
@@ -1683,6 +1869,7 @@ class _StoryTimelineEditorState extends State<StoryTimelineEditor> {
             _selectedBlockIndex = null;
             _selectedMotionBlockIndex = null;
             _selectedHatBlockIndex = null;
+            _selectedMusclesBlockIndex = null;
           });
         },
         child: Stack(
@@ -1718,6 +1905,84 @@ class _StoryTimelineEditorState extends State<StoryTimelineEditor> {
               _edgeHandle(
                 start: false,
                 onDrag: (details) => _updateGlassesBlockEnd(index, details.delta.dx / _pixelsPerSecond),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _musclesChip(bool selected) {
+    return Container(
+      width: 64,
+      height: _paletteChipHeight,
+      decoration: BoxDecoration(
+        color: selected ? const Color(0xFF145C38) : const Color(0xFF1B7A4E),
+        borderRadius: BorderRadius.circular(AppColors.border_radius),
+        border: Border.all(color: selected ? Colors.black : Colors.black26, width: selected ? 2 : 1),
+      ),
+      child: const Center(
+        child: Text(
+          'عضلات',
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMusclesBlockWidget(int index, StoryMusclesBlock block) {
+    final left = block.startTime * _pixelsPerSecond;
+    final width = (block.endTime - block.startTime) * _pixelsPerSecond;
+    final isSelected = _selectedMusclesBlockIndex == index;
+    return Positioned(
+      left: left,
+      top: _laneBlockTop(isSelected),
+      width: width,
+      height: _laneBlockHeight(isSelected),
+      child: GestureDetector(
+        onTap: () {
+          setState(() {
+            _selectedMusclesBlockIndex = index;
+            _selectedBlockIndex = null;
+            _selectedMotionBlockIndex = null;
+            _selectedHatBlockIndex = null;
+            _selectedGlassesBlockIndex = null;
+          });
+        },
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            GestureDetector(
+              onHorizontalDragUpdate: (details) {
+                _moveMusclesBlock(index, details.delta.dx / _pixelsPerSecond);
+              },
+              child: Container(
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1B7A4E),
+                  borderRadius: BorderRadius.circular(AppColors.border_radius),
+                  border: Border.all(
+                    color: AppColors.inputBorder,
+                    width: isSelected ? 2 : 1,
+                  ),
+                ),
+                child: const Center(
+                  child: Text(
+                    'عضلات',
+                    style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ),
+            ),
+            if (isSelected) ...[
+              _edgeHandle(
+                start: true,
+                onDrag: (details) => _updateMusclesBlockStart(index, details.delta.dx / _pixelsPerSecond),
+              ),
+              _edgeHandle(
+                start: false,
+                onDrag: (details) => _updateMusclesBlockEnd(index, details.delta.dx / _pixelsPerSecond),
               ),
             ],
           ],

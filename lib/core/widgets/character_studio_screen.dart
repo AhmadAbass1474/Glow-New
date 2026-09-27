@@ -34,7 +34,6 @@ class _CharacterStudioScreenState extends State<CharacterStudioScreen> {
   var _character = 'port';
   CharacterMotion? _selectedMotion;
   var _playing = true;
-  var _speaking = false;
   var _skeleton = false;
   var _showHat = true;
   var _showGlasses = true;
@@ -214,7 +213,7 @@ class _CharacterStudioScreenState extends State<CharacterStudioScreen> {
                 characterName: _character,
                 storyText: _storyText,
                 isPlaying: _playing,
-                isSpeaking: _speaking,
+                isSpeaking: false,
                 playbackPosition: _position,
                 motion: _selectedMotion,
                 interactive: true,
@@ -508,20 +507,6 @@ class _CharacterStudioScreenState extends State<CharacterStudioScreen> {
                 ),
               ),
               const SizedBox(height: 12),
-              SwitchListTile.adaptive(
-                value: _speaking,
-                onChanged: (value) => setState(() => _speaking = value),
-                contentPadding: EdgeInsets.zero,
-                activeTrackColor: _accent,
-                title: const Text(
-                  'تجربة حركة الفم',
-                  style: TextStyle(color: _ink, fontSize: 13),
-                ),
-                subtitle: const Text(
-                  'معاينة بدون صوت',
-                  style: TextStyle(color: _muted, fontSize: 11),
-                ),
-              ),
               SwitchListTile.adaptive(
                 value: _skeleton,
                 onChanged: (value) => setState(() => _skeleton = value),

@@ -21,10 +21,10 @@ vec2 glowPad(vec2 q, vec2 c, vec2 r) {
   float dist = length(d);
   float body = clamp((1.0 - dist) / 0.28, 0.0, 1.0);
   body = body * body * (3.0 - 2.0 * body);
-  float light = body * clamp(d.y, 0.0, 1.0) * 0.85;
-  float shadow = body * clamp(-d.y, 0.0, 1.0) * 0.55;
+  float light = body * clamp(d.y, 0.0, 1.0) * 0.42;
+  float shadow = body * clamp(-d.y, 0.0, 1.0) * 0.28;
   float band = exp(-(d.y + 0.82) * (d.y + 0.82) / 0.05) * exp(-d.x * d.x / 0.7);
-  return vec2(shadow + band * 0.55, light);
+  return vec2(shadow + band * 0.22, light);
 }
 float glowSeg(vec2 p, vec2 a, vec2 b) {
   vec2 pa = p - a;
@@ -35,32 +35,27 @@ float glowSeg(vec2 p, vec2 a, vec2 b) {
 vec3 glowMuscleDraw(vec3 p, vec3 n) {
   float cx = p.x + 0.062;
   float front = smoothstep(0.18, 0.55, n.z) * smoothstep(0.07, 0.13, p.z);
-  float yIn = smoothstep(0.17, 0.20, p.y) * (1.0 - smoothstep(0.43, 0.47, p.y));
-  float side = 1.0 - smoothstep(0.10, 0.155, abs(cx));
+  float yIn = smoothstep(0.17, 0.20, p.y) * (1.0 - smoothstep(0.36, 0.39, p.y));
+  float side = 1.0 - smoothstep(0.13, 0.20, abs(cx));
   float gate = front * yIn * side;
   vec2 q = vec2(cx, p.y);
   float shadow = clamp((0.007 - abs(cx)) / 0.005, 0.0, 1.0)
-    * smoothstep(0.20, 0.225, p.y) * (1.0 - smoothstep(0.41, 0.43, p.y)) * 0.75;
-  shadow += clamp((0.012 - abs(p.y - 0.350)) / 0.010, 0.0, 1.0)
-    * clamp((0.105 - abs(cx)) / 0.08, 0.0, 1.0) * 0.65;
-  shadow += clamp((0.0055 - abs(p.y - 0.308)) / 0.0045, 0.0, 1.0) * clamp((0.090 - abs(cx)) / 0.090, 0.0, 1.0) * 0.55;
-  shadow += clamp((0.0055 - abs(p.y - 0.264)) / 0.0045, 0.0, 1.0) * clamp((0.096 - abs(cx)) / 0.096, 0.0, 1.0) * 0.55;
-  shadow += clamp((0.0055 - abs(p.y - 0.222)) / 0.0045, 0.0, 1.0) * clamp((0.086 - abs(cx)) / 0.086, 0.0, 1.0) * 0.55;
-  vec2 pad = glowPad(q, vec2(-0.056, 0.400), vec2(0.050, 0.034));
-  shadow += pad.x; float light = pad.y;
-  pad = glowPad(q, vec2(0.056, 0.400), vec2(0.050, 0.034));
+    * smoothstep(0.20, 0.225, p.y) * (1.0 - smoothstep(0.34, 0.36, p.y)) * 0.36;
+  shadow += clamp((0.0055 - abs(p.y - 0.308)) / 0.0045, 0.0, 1.0) * clamp((0.135 - abs(cx)) / 0.135, 0.0, 1.0) * 0.30;
+  shadow += clamp((0.0055 - abs(p.y - 0.264)) / 0.0045, 0.0, 1.0) * clamp((0.140 - abs(cx)) / 0.140, 0.0, 1.0) * 0.30;
+  shadow += clamp((0.0055 - abs(p.y - 0.222)) / 0.0045, 0.0, 1.0) * clamp((0.125 - abs(cx)) / 0.125, 0.0, 1.0) * 0.28;
+  float light = 0.0;
+  vec2 pad = glowPad(q, vec2(-0.058, 0.328), vec2(0.068, 0.026));
   shadow += pad.x; light += pad.y;
-  pad = glowPad(q, vec2(-0.046, 0.328), vec2(0.042, 0.022));
+  pad = glowPad(q, vec2(0.058, 0.328), vec2(0.068, 0.026));
   shadow += pad.x; light += pad.y;
-  pad = glowPad(q, vec2(0.046, 0.328), vec2(0.042, 0.022));
+  pad = glowPad(q, vec2(-0.060, 0.284), vec2(0.072, 0.026));
   shadow += pad.x; light += pad.y;
-  pad = glowPad(q, vec2(-0.048, 0.284), vec2(0.046, 0.022));
+  pad = glowPad(q, vec2(0.060, 0.284), vec2(0.072, 0.026));
   shadow += pad.x; light += pad.y;
-  pad = glowPad(q, vec2(0.048, 0.284), vec2(0.046, 0.022));
+  pad = glowPad(q, vec2(-0.054, 0.242), vec2(0.064, 0.024));
   shadow += pad.x; light += pad.y;
-  pad = glowPad(q, vec2(-0.044, 0.242), vec2(0.042, 0.020));
-  shadow += pad.x; light += pad.y;
-  pad = glowPad(q, vec2(0.044, 0.242), vec2(0.042, 0.020));
+  pad = glowPad(q, vec2(0.054, 0.242), vec2(0.064, 0.024));
   shadow += pad.x; light += pad.y;
   float boltD = glowSeg(q, vec2(-0.030, 0.426), vec2(-0.074, 0.402));
   boltD = min(boltD, glowSeg(q, vec2(-0.074, 0.402), vec2(-0.036, 0.386)));
@@ -68,9 +63,35 @@ vec3 glowMuscleDraw(vec3 p, vec3 n) {
   float bolt = clamp((0.0065 - boltD) / 0.0045, 0.0, 1.0);
   return vec3(shadow, light, bolt) * gate;
 }
+float glowDome(vec2 q, vec2 c, vec2 r) {
+  vec2 d = (q - c) / r;
+  float body = clamp(1.0 - dot(d, d), 0.0, 1.0);
+  return body * body;
+}
+float glowMuscleHeight(vec3 p, vec3 n) {
+  float cx = p.x + 0.062;
+  float front = smoothstep(0.18, 0.55, n.z) * smoothstep(0.07, 0.13, p.z);
+  float yIn = smoothstep(0.17, 0.20, p.y) * (1.0 - smoothstep(0.36, 0.39, p.y));
+  float side = 1.0 - smoothstep(0.13, 0.20, abs(cx));
+  float gate = front * yIn * side;
+  vec2 q = vec2(cx, p.y);
+  float h = 0.0;
+  h += glowDome(q, vec2(-0.058, 0.328), vec2(0.068, 0.026)) * 0.010;
+  h += glowDome(q, vec2(0.058, 0.328), vec2(0.068, 0.026)) * 0.010;
+  h += glowDome(q, vec2(-0.060, 0.284), vec2(0.072, 0.026)) * 0.011;
+  h += glowDome(q, vec2(0.060, 0.284), vec2(0.072, 0.026)) * 0.011;
+  h += glowDome(q, vec2(-0.054, 0.242), vec2(0.064, 0.024)) * 0.009;
+  h += glowDome(q, vec2(0.054, 0.242), vec2(0.064, 0.024)) * 0.009;
+  float reach = 1.0 - smoothstep(0.03, 0.16, abs(cx));
+  h -= exp(-cx * cx / 0.000045) * 0.003 * smoothstep(0.20, 0.24, p.y) * (1.0 - smoothstep(0.34, 0.36, p.y));
+  h -= exp(-(p.y - 0.306) * (p.y - 0.306) / 0.000030) * 0.003 * reach;
+  h -= exp(-(p.y - 0.262) * (p.y - 0.262) / 0.000030) * 0.003 * reach;
+  h -= exp(-(p.y - 0.222) * (p.y - 0.222) / 0.000030) * 0.002 * reach;
+  return h * gate;
+}
 `;
-let nextBlink = 1.8, blinkStart = -10, blinkDuration = .26, nextLook = 1.2;
-let lookX = 0, lookY = 0, gazeX = 0, gazeY = 0, squint = 0, speechBlend = 0;
+let nextBlink = 0.7, blinkStart = -10, blinkDuration = .26, nextLook = 1.2;
+let lookX = 0, lookY = 0, gazeX = 0, gazeY = 0, squint = 0, jawRestPos = null;
 const eyeRotation = new THREE.Euler(), jawRotation = new THREE.Quaternion();
 const jawAxis = new THREE.Vector3(1, 0, 0);
 const smooth = t => { t = THREE.MathUtils.clamp(t, 0, 1); return t * t * (3 - 2 * t); };
@@ -124,13 +145,14 @@ function palette(mesh, seen) {
   for (const material of [mesh.material].flat()) {
     if (!material || seen.has(material) || HAT_MATERIALS.has(material.name)) continue;
     seen.add(material);
-    material.customProgramCacheKey = () => 'glow-skin-palette-v3';
+    material.customProgramCacheKey = () => 'glow-skin-palette-v8';
     material.onBeforeCompile = shader => {
       shader.uniforms.glowSkinTarget = target;
       shader.uniforms.glowSkinStrength = strength;
       shader.uniforms.glowMuscles = muscles;
       shader.vertexShader = 'attribute float _glow_skin_region;\nvarying float vGlowSkinRegion;\nvarying vec3 vGlowMuscle;\nuniform float glowMuscles;\n' + MUSCLE_GLSL + shader.vertexShader;
-      shader.vertexShader = shader.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\nvGlowSkinRegion = _glow_skin_region;\nvGlowMuscle = glowMuscleDraw(position, normal);');
+      shader.vertexShader = shader.vertexShader.replace('#include <beginnormal_vertex>', '#include <beginnormal_vertex>\nfloat glowHdx = glowMuscleHeight(position + vec3(0.004, 0.0, 0.0), normal) - glowMuscleHeight(position - vec3(0.004, 0.0, 0.0), normal);\nfloat glowHdy = glowMuscleHeight(position + vec3(0.0, 0.004, 0.0), normal) - glowMuscleHeight(position - vec3(0.0, 0.004, 0.0), normal);\nobjectNormal = normalize(objectNormal - vec3(glowHdx, glowHdy, 0.0) * (36.0 * glowMuscles));');
+      shader.vertexShader = shader.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\nvGlowSkinRegion = _glow_skin_region;\nvGlowMuscle = glowMuscleDraw(position, normal);\ntransformed += normal * glowMuscleHeight(position, normal) * glowMuscles;');
       shader.fragmentShader = 'uniform vec3 glowSkinTarget;\nuniform float glowSkinStrength;\nuniform float glowMuscles;\nvarying float vGlowSkinRegion;\nvarying vec3 vGlowMuscle;\n' + shader.fragmentShader;
       shader.fragmentShader = shader.fragmentShader.replace('#include <map_fragment>', `#include <map_fragment>
         #ifdef USE_MAP
@@ -138,13 +160,23 @@ function palette(mesh, seen) {
         float mask = smoothstep(0.20, 0.45, greenDominance) * clamp(vGlowSkinRegion, 0.0, 1.0) * glowSkinStrength;
         float shade = dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722)) / 0.07652005545;
         diffuseColor.rgb = mix(diffuseColor.rgb, glowSkinTarget * shade, mask);
-        float muscleCream = (1.0 - smoothstep(0.08, 0.30, greenDominance)) * smoothstep(0.55, 0.80, max(diffuseColor.r, diffuseColor.g));
-        float muscleOn = muscleCream * glowMuscles;
-        diffuseColor.rgb *= mix(1.0, 0.60, clamp(vGlowMuscle.x, 0.0, 1.0) * muscleOn);
-        diffuseColor.rgb *= mix(1.0, 1.12, clamp(vGlowMuscle.y, 0.0, 1.0) * muscleOn);
+        float muscleOn = glowMuscles;
+        diffuseColor.rgb *= mix(1.0, 0.62, clamp(vGlowMuscle.x, 0.0, 1.0) * muscleOn);
+        diffuseColor.rgb *= mix(1.0, 1.28, clamp(vGlowMuscle.y, 0.0, 1.0) * muscleOn);
         diffuseColor.rgb = mix(diffuseColor.rgb, vec3(1.0, 0.75, 0.08), clamp(vGlowMuscle.z, 0.0, 1.0) * muscleOn);
         #endif`);
     };
+  }
+}
+function applyTalkingMouth() {
+  if (!jaw || !jawRest || !jawRestPos) return;
+  const sad = state.motion === 'Sad';
+  jaw.position.set(jawRestPos.x, jawRestPos.y + (sad ? 0.024 : 0), jawRestPos.z);
+  if (sad) jaw.quaternion.identity();
+  else {
+    const u = (time % 2) / 2;
+    const syllable = Math.sin(Math.PI * 4 * u) ** 2;
+    jaw.quaternion.setFromAxisAngle(jawAxis, 0.08 + 0.30 * syllable);
   }
 }
 function selectMotion() {
@@ -221,12 +253,7 @@ function tick(now) {
   if (state.playing) {
     time += dt; state.position += dt;
     selectMotion(); mixer.update(dt); animateEyes(dt);
-    speechBlend += ((state.speaking ? 1 : 0) - speechBlend) * Math.min(1, dt * 12);
-    if (speechBlend > .001 && jaw && jawRest) {
-      const t = state.position, syllable = Math.sin(t * 10.7) ** 2, envelope = Math.sin(t * 2.1) > -.65 ? 1 : .15;
-      const opening = Math.max(2 * Math.atan2(jaw.quaternion.x, jaw.quaternion.w), (.025 + syllable * envelope * .185) * speechBlend);
-      jaw.quaternion.copy(jawRest).multiply(jawRotation.setFromAxisAngle(jawAxis, opening));
-    }
+    applyTalkingMouth();
   }
   draw();
   if (failed) return;
@@ -279,7 +306,7 @@ async function _mountGltf(data) {
     }
   });
   for (const name of ['EyeLeft', 'EyeRight']) { const eye = model.getObjectByName(name); if (eye) eyes.push(eye); }
-  jaw = model.getObjectByName('Jaw'); jawRest = jaw?.quaternion.clone();
+  jaw = model.getObjectByName('Jaw'); jawRest = jaw?.quaternion.clone(); jawRestPos = jaw?.position.clone();
   const bounds = new THREE.Box3().setFromObject(model), size = bounds.getSize(new THREE.Vector3()), center = bounds.getCenter(new THREE.Vector3());
   if (!(size.y > 0)) throw new Error('Empty model bounds');
   const scale = 3.5 / size.y;
@@ -341,7 +368,11 @@ function update(next) {
   if (mixer) {
     selectMotion();
     if (seek) { mixer.stopAllAction(); active = null; selectMotion(); if (active) active.time = state.position % active.getClip().duration; mixer.update(0); }
-    if (wasSpeaking && !state.speaking && jawRest) { speechBlend = 0; jaw.quaternion.copy(jawRest); mixer.update(0); }
+    if (wasSpeaking && !state.speaking && jaw && jawRest && jawRestPos) {
+      jaw.quaternion.copy(jawRest);
+      jaw.position.copy(jawRestPos);
+      mixer.update(0);
+    }
   }
   if (!state.visible) { cancelAnimationFrame(frame); frame = 0; last = 0; }
   else schedule();

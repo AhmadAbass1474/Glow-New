@@ -11,7 +11,7 @@ class CharacterEyeAnimation {
   three.Mesh? _lids;
   CharacterMotion? _motion;
   double _time = 0, _motionTime = 0;
-  double _nextBlink = 1.8, _blinkStart = -10, _blinkDuration = .26;
+  double _nextBlink = 0.7, _blinkStart = -10, _blinkDuration = .26;
   double _nextLook = 1.2, _lookX = 0, _lookY = 0;
   double _gazeX = 0, _gazeY = 0, _squint = 0;
 
@@ -23,8 +23,9 @@ class CharacterEyeAnimation {
     }
     model.traverse((object) {
       if (object is three.Mesh &&
-          object.morphTargetDictionary?.containsKey('BlinkLeftClosed') ==
-              true) {
+          (object.name == 'EyeLids' ||
+              object.morphTargetDictionary?.containsKey('BlinkLeftClosed') ==
+                  true)) {
         _lids = object;
         object.visible = false;
       }
@@ -120,7 +121,7 @@ class CharacterEyeAnimation {
     _motion = null;
     _time = _motionTime = 0;
     _gazeX = _gazeY = _squint = _lookX = _lookY = 0;
-    _nextBlink = 1.8;
+    _nextBlink = 0.7;
     _blinkStart = -10;
     _nextLook = 1.2;
   }

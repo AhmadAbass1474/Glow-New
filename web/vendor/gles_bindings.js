@@ -4,11 +4,21 @@ function glCanvas(canvas,options) {
   // canvas.width = width; // Set width to 800 pixels
   // canvas.height = height; // Set height to 600 pixels
 
-  document.body.appendChild(canvas);
-  const glp = canvas.getContext("webgl2",options);
+  if (canvas.parentNode !== document.body) document.body.appendChild(canvas);
+  const plain = {};
+  if (options) {
+    plain.alpha = options.alpha !== false;
+    plain.antialias = options.antialias === true;
+    plain.depth = options.depth !== false;
+    plain.stencil = options.stencil === true;
+  }
+  let glp = canvas.getContext("webgl2", plain);
   if (!glp) {
-    alert("Your browser does not support WebGL 2.");
-    return;
+    glp = canvas.getContext("webgl2", { alpha: true, antialias: false, depth: true, stencil: false });
+  }
+  if (!glp) {
+    console.error("WebGL2 context was not created. Close other studio tabs and refresh.");
+    return null;
   }
   console.log("WebGL2 context created successfully!");
 

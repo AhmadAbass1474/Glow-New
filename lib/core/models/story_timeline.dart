@@ -141,11 +141,39 @@ class StoryGlassesBlock {
   }
 }
 
+/// Timed belly-muscle overlay. Drag payload is `muscles`.
+class StoryMusclesBlock {
+  final double startTime;
+  final double endTime;
+
+  StoryMusclesBlock({required this.startTime, required this.endTime});
+
+  static const dragData = 'muscles';
+
+  static bool isDrag(String data) => data == dragData;
+
+  bool isPlaying(double currentTime) {
+    return currentTime >= startTime && currentTime <= endTime;
+  }
+
+  factory StoryMusclesBlock.fromJson(Map<String, dynamic> json) {
+    return StoryMusclesBlock(
+      startTime: (json['startTime'] as num).toDouble(),
+      endTime: (json['endTime'] as num).toDouble(),
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {'startTime': startTime, 'endTime': endTime};
+  }
+}
+
 class StoryTimeline {
   final List<StoryBlock> blocks;
   final List<StoryMotionBlock> motionBlocks;
   final List<StoryHatBlock> hatBlocks;
   final List<StoryGlassesBlock> glassesBlocks;
+  final List<StoryMusclesBlock> musclesBlocks;
   final double totalDuration; // In seconds
 
   StoryTimeline({
@@ -153,6 +181,7 @@ class StoryTimeline {
     this.motionBlocks = const [],
     this.hatBlocks = const [],
     this.glassesBlocks = const [],
+    this.musclesBlocks = const [],
     required this.totalDuration,
   });
 
@@ -194,6 +223,14 @@ class StoryTimeline {
     return false;
   }
 
+  /// Whether the belly muscles should be on at [time].
+  bool musclesOnAt(double time) {
+    for (final block in musclesBlocks) {
+      if (block.isPlaying(time)) return true;
+    }
+    return false;
+  }
+
   /// Returns a unique list of all characters used in this timeline
   /// This is useful for preloading models.
   List<String> get allCharacterIds {
@@ -205,6 +242,7 @@ class StoryTimeline {
     final motionBlocksList = json['motionBlocks'] as List<dynamic>? ?? [];
     final hatBlocksList = json['hatBlocks'] as List<dynamic>? ?? [];
     final glassesBlocksList = json['glassesBlocks'] as List<dynamic>? ?? [];
+    final musclesBlocksList = json['musclesBlocks'] as List<dynamic>? ?? [];
     return StoryTimeline(
       blocks: blocksList
           .map((b) => StoryBlock.fromJson(b as Map<String, dynamic>))
@@ -218,6 +256,9 @@ class StoryTimeline {
       glassesBlocks: glassesBlocksList
           .map((b) => StoryGlassesBlock.fromJson(b as Map<String, dynamic>))
           .toList(),
+      musclesBlocks: musclesBlocksList
+          .map((b) => StoryMusclesBlock.fromJson(b as Map<String, dynamic>))
+          .toList(),
       totalDuration: (json['totalDuration'] as num?)?.toDouble() ?? 0.0,
     );
   }
@@ -228,6 +269,7 @@ class StoryTimeline {
       'motionBlocks': motionBlocks.map((b) => b.toJson()).toList(),
       'hatBlocks': hatBlocks.map((b) => b.toJson()).toList(),
       'glassesBlocks': glassesBlocks.map((b) => b.toJson()).toList(),
+      'musclesBlocks': musclesBlocks.map((b) => b.toJson()).toList(),
       'totalDuration': totalDuration,
     };
   }

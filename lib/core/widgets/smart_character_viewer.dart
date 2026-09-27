@@ -116,6 +116,7 @@ class _CharacterSurfaceState extends State<_CharacterSurface>
   three.Object3D? _jaw;
   three.Object3D? _mouth;
   three.Quaternion? _jawRest;
+  three.Vector3? _jawRestPosition;
   three.LineSegments? _skeleton;
   three.Float32BufferAttribute? _skeletonPositions;
   final _point = three.Vector3();
@@ -126,7 +127,6 @@ class _CharacterSurfaceState extends State<_CharacterSurface>
   bool _tickerEnabled = true;
   Object? _error;
   double _elapsed = 0;
-  double _speechBlend = 0;
   Duration _lastPosition = Duration.zero;
   Timer? _loadTimeout;
   int _loadGeneration = 0;
@@ -254,6 +254,7 @@ class _CharacterSurfaceState extends State<_CharacterSurface>
     _jaw = _model!.getObjectByName('Jaw');
     _mouth = _model!.getObjectByName('Mouth');
     _jawRest = _jaw?.quaternion.clone();
+    _jawRestPosition = _jaw?.position.clone();
     _mixer = three.AnimationMixer(_model!);
     for (final clip
         in (data.animations ?? const []).whereType<three.AnimationClip>()) {
@@ -505,43 +506,30 @@ class _CharacterSurfaceState extends State<_CharacterSurface>
       }
       _mixer?.update(dt);
       _sleeveMorph.update();
-      _eyeAnimation.update(dt, config.motion ?? _plan.motionAt(_position));
-      _speechBlend +=
-          ((config.isSpeaking ? 1.0 : 0.0) - _speechBlend) *
-          math.min(1.0, dt * 12);
       final motion = config.motion ?? _plan.motionAt(_position);
-      // Held-open clips must set the jaw after the mixer. Idle and other
-      // clips have no Jaw track, so a cross-fade would otherwise leave the
-      // mouth closed after the rest reset above.
-      final heldOpening = switch (motion) {
-        CharacterMotion.happy => 0.52,
-        CharacterMotion.smile ||
-        CharacterMotion.wave ||
-        CharacterMotion.victory => 0.22,
-        CharacterMotion.sad => 0.0,
-        _ => null,
-      };
-      if (heldOpening != null && _jaw != null && _jawRest != null) {
-        _jawRotation.setFromAxisAngle(_jawAxis, heldOpening);
-        _jaw!.quaternion.setFrom(_jawRest!).multiply(_jawRotation);
-        _mouth?.scale.setValues(1, 1, 1);
-      } else if (_speechBlend > 0.001 && _jaw != null && _jawRest != null) {
-        final t = _position.inMicroseconds / 1000000;
-        final syllable = math.pow(math.sin(t * 10.7), 2).toDouble();
-        final envelope = math.sin(t * 2.1) > -0.65 ? 1.0 : 0.15;
-        final clipOpening =
-            2 * math.atan2(_jaw!.quaternion.x, _jaw!.quaternion.w);
-        final speechOpening =
-            (0.04 + syllable * envelope * 0.28) * _speechBlend;
-        _jawRotation.setFromAxisAngle(
-          _jawAxis,
-          math.max(clipOpening, speechOpening),
-        );
-        _jaw!.quaternion.setFrom(_jawRest!).multiply(_jawRotation);
-        _mouth?.scale.setValues(1, 1 + syllable * envelope * 1.6, 1);
-      }
+      _eyeAnimation.update(dt, motion);
+      _applyTalkingMouth(motion);
     }
     _updateSkeleton();
+  }
+
+  /// Every motion uses the Talk clip's jaw curve. Sad stays shut and lifts
+  /// the lower lip so the painted smile turns down.
+  void _applyTalkingMouth(CharacterMotion motion) {
+    final jaw = _jaw;
+    final rest = _jawRestPosition;
+    if (jaw == null || rest == null) return;
+    final sad = motion == CharacterMotion.sad;
+    jaw.position.setValues(rest.x, rest.y + (sad ? 0.024 : 0.0), rest.z);
+    if (sad) {
+      _jawRotation.setFromAxisAngle(_jawAxis, 0);
+    } else {
+      final u = (_elapsed % 2.0) / 2.0;
+      final syllable = math.pow(math.sin(math.pi * 4 * u), 2.0);
+      _jawRotation.setFromAxisAngle(_jawAxis, 0.08 + 0.30 * syllable);
+    }
+    jaw.quaternion.setFrom(_jawRotation);
+    _mouth?.scale.setValues(1, 1, 1);
   }
 
   bool _canRender() {
@@ -647,7 +635,7 @@ class _CharacterSurfaceState extends State<_CharacterSurface>
     _jaw = null;
     _mouth = null;
     _jawRest = null;
-    _speechBlend = 0;
+    _jawRestPosition = null;
     _skeleton = null;
     _skeletonPositions = null;
   }

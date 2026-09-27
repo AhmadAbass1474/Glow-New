@@ -625,6 +625,7 @@ class _ChildStoryViewerScreenState extends State<ChildStoryViewerScreen>
                               CharacterMotion? activeMotion;
                               var showHat = false;
                               var showGlasses = false;
+                              var showMuscles = false;
                               var hatColor = const Color(0xFF2C2C2E);
                               if (_currentTimeline != null) {
                                 final t = position.inMilliseconds / 1000.0;
@@ -651,6 +652,7 @@ class _ChildStoryViewerScreenState extends State<ChildStoryViewerScreen>
                                   hatColor = hat.color;
                                 }
                                 showGlasses = _currentTimeline!.glassesOnAt(t);
+                                showMuscles = _currentTimeline!.musclesOnAt(t);
                               }
 
                               return Column(
@@ -701,6 +703,7 @@ class _ChildStoryViewerScreenState extends State<ChildStoryViewerScreen>
                                                   showHat: showHat,
                                                   hatColor: hatColor,
                                                   showGlasses: showGlasses,
+                                                  showMuscles: showMuscles,
                                                   onReady: () => _onCharacterReady(_sceneGeneration),
                                                 ),
                                               ),

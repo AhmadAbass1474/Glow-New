@@ -1,13 +1,12 @@
-import 'package:Glow/core/network/network_info.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/di/injection_container.dart';
+import '../../../../core/network/network_info.dart';
 import '../../../../core/utils/device_id_helper.dart';
 import '../../data/datasources/auth_local_data_source.dart';
 import '../../data/models/child_profile_model.dart';
-import '../../../../core/network/network_info.dart';
 import '../../../content/data/services/sync_service.dart';
 
 class SplashScreen extends StatefulWidget {
@@ -24,36 +23,31 @@ class _SplashScreenState extends State<SplashScreen> {
   @override
   void initState() {
     super.initState();
-    Future.delayed(const Duration(seconds: 1), () {
-      _checkAuthStatus();
-    });
+    _checkAuthStatus();
   }
 
   Future<void> _checkAuthStatus() async {
     final localDataSource = sl<AuthLocalDataSource>();
     final cachedUser = await localDataSource.getLastUser();
-    final isConnected = await sl<NetworkInfo>().isConnected;
 
     if (cachedUser != null) {
+      if (!mounted) return;
       if (cachedUser.role == 'admin') {
-        if (mounted) context.go('/admin-dashboard');
+        context.go('/admin-dashboard');
       } else {
-        if (mounted) context.go('/parent-dashboard');
+        context.go('/parent-dashboard');
       }
-      return;
-    } 
-
-    final cachedChild = await localDataSource.getLastChild();
-    if (cachedChild != null) {
-      if (isConnected) {
-        if (mounted) setState(() { _isSyncing = true; });
-        await sl<SyncService>().syncAll(childId: cachedChild.id, silent: true);
-      }
-      if (mounted) context.go('/child-dashboard');
       return;
     }
 
+    final cachedChild = await localDataSource.getLastChild();
+    final isConnected = await sl<NetworkInfo>().isConnected;
+
     if (!isConnected) {
+      if (cachedChild != null) {
+        if (mounted) context.go('/child-dashboard');
+        return;
+      }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -64,16 +58,19 @@ class _SplashScreenState extends State<SplashScreen> {
             behavior: SnackBarBehavior.floating,
           ),
         );
-        setState(() {
-          _showButton = true;
-        });
+        setState(() => _showButton = true);
       }
       return;
     }
 
-    // Attempt silent login via device ID
+    if (cachedChild != null) {
+      await _syncChildIfNeeded(cachedChild.id);
+      if (mounted) context.go('/child-dashboard');
+      return;
+    }
+
     try {
-      if (mounted) setState(() { _isSyncing = true; });
+      if (mounted) setState(() => _isSyncing = true);
       final deviceId = await DeviceIdHelper.getDeviceId();
       final email = DeviceIdHelper.generateDeviceEmail(deviceId);
       final password = DeviceIdHelper.generateDevicePassword(deviceId);
@@ -85,7 +82,6 @@ class _SplashScreenState extends State<SplashScreen> {
       );
 
       if (response.user != null) {
-        // Fetch child profile
         final data = await supabase
             .from('children_profiles')
             .select()
@@ -95,7 +91,7 @@ class _SplashScreenState extends State<SplashScreen> {
         if (data != null) {
           final child = ChildProfileModel.fromJson(data);
           await localDataSource.cacheChild(child);
-          await sl<SyncService>().syncAll(childId: child.id, silent: true);
+          await _syncChildIfNeeded(child.id);
           if (mounted) {
             context.go('/child-dashboard');
             return;
@@ -106,13 +102,19 @@ class _SplashScreenState extends State<SplashScreen> {
       // Silent login failed, proceed to show button
     }
 
-    // If nothing is cached or silent login fails, stay on splash screen and show the button
     if (mounted) {
       setState(() {
         _isSyncing = false;
         _showButton = true;
       });
     }
+  }
+
+  Future<void> _syncChildIfNeeded(String childId) async {
+    final sync = sl<SyncService>();
+    if (!await sync.needsSync()) return;
+    if (mounted) setState(() => _isSyncing = true);
+    await sync.syncAll(childId: childId, silent: true);
   }
 
   @override
@@ -125,9 +127,15 @@ class _SplashScreenState extends State<SplashScreen> {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 const Spacer(),
-                // Logo
                 Image.asset('assets/images/logo.png', width: double.infinity),
-                const SizedBox(height: 0),
+                if (_isSyncing) ...[
+                  const SizedBox(height: 28),
+                  const SizedBox(
+                    width: 28,
+                    height: 28,
+                    child: CircularProgressIndicator(strokeWidth: 2.5),
+                  ),
+                ],
                 if (_showButton)
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 20.0),

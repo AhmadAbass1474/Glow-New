@@ -3,6 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:internet_connection_checker/internet_connection_checker.dart';
 
 import '../../core/network/network_info.dart';
@@ -42,11 +43,23 @@ Future<void> init() async {
   final authBox = Hive.box('auth');
   sl.registerLazySingleton(() => authBox);
 
-  final connectionChecker = InternetConnectionChecker.createInstance();
+  const reachabilityTimeout = Duration(milliseconds: 700);
+  final connectionChecker = InternetConnectionChecker.createInstance(
+    checkTimeout: reachabilityTimeout,
+    addresses: [
+      AddressCheckOption(
+        uri: Uri.parse('https://sqvbbsqmwktxuapwivnk.supabase.co/auth/v1/health'),
+        timeout: reachabilityTimeout,
+      ),
+    ],
+  );
   sl.registerLazySingleton(() => connectionChecker);
+  sl.registerLazySingleton(() => Connectivity());
 
   // Core
-  sl.registerLazySingleton<NetworkInfo>(() => NetworkInfoImpl(sl()));
+  sl.registerLazySingleton<NetworkInfo>(
+    () => NetworkInfoImpl(sl(), sl()),
+  );
 
   // Core - Services
   final resourceBox = Hive.box('resource_cache_meta');
@@ -120,6 +133,7 @@ Future<void> init() async {
       resourceManager: sl(),
       networkInfo: sl(),
       connectionChecker: sl(),
+      preferences: sl(),
     ),
   );
 
