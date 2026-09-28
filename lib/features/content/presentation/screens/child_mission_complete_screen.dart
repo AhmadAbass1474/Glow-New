@@ -1,20 +1,46 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/audio/child_button_voice.dart';
 import '../../domain/entities/mission_entity.dart';
 
-class ChildMissionCompleteScreen extends StatelessWidget {
+class ChildMissionCompleteScreen extends StatefulWidget {
   final MissionEntity mission;
 
   const ChildMissionCompleteScreen({super.key, required this.mission});
 
   @override
+  State<ChildMissionCompleteScreen> createState() =>
+      _ChildMissionCompleteScreenState();
+}
+
+class _ChildMissionCompleteScreenState extends State<ChildMissionCompleteScreen> {
+  @override
+  void initState() {
+    super.initState();
+    ChildButtonVoice.playSequence(const ['أحسنت يا بطل']);
+  }
+
+  @override
+  void dispose() {
+    ChildButtonVoice.stop();
+    super.dispose();
+  }
+
+  void _tap(String phrase, void Function(GoRouter router) navigate) {
+    final router = GoRouter.of(context);
+    navigate(router);
+    unawaited(ChildButtonVoice.press(phrase, () async {}));
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final mission = widget.mission;
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
-      // Calm, flat off-white background
-      body: Container(
+      body: SizedBox(
         width: double.infinity,
         child: SafeArea(
           child: Padding(
@@ -26,35 +52,27 @@ class ChildMissionCompleteScreen extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 const Spacer(),
-
-                // Title
                 const Text(
                   'أحسنت يا بطل !',
                   style: TextStyle(
                     fontSize: 32,
                     fontWeight: FontWeight.w900,
-                    color: Color(0xFF10B981), // Calmer green
+                    color: Color(0xFF10B981),
                   ),
                   textAlign: TextAlign.center,
                 ),
-
                 const SizedBox(height: 16),
-
-                // Subtitle
                 const Text(
                   'لقد أتممت المهمة بالكامل وأجبت على جميع التحديات بنجاح. لقد ربحت أوسمة ونقاطاً جديدة!',
                   style: TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
-                    color: Color(0xFF475569), // Calmer slate text
+                    color: Color(0xFF475569),
                     height: 1.5,
                   ),
                   textAlign: TextAlign.center,
                 ),
-
                 const SizedBox(height: 32),
-
-                // Earned Badge Card (Flat with simple border)
                 Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
@@ -65,12 +83,11 @@ class ChildMissionCompleteScreen extends StatelessWidget {
                     border: Border.all(
                       color: AppColors.inputBorder,
                       width: 2,
-                    ), // Unified simple border
+                    ),
                   ),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      // Badge
                       Expanded(
                         child: Column(
                           children: [
@@ -97,13 +114,11 @@ class ChildMissionCompleteScreen extends StatelessWidget {
                           ],
                         ),
                       ),
-                      // Divider
                       Container(
                         height: 50,
                         width: 2,
-                        color: const Color(0xFFF1F5F9), // Very soft divider
+                        color: const Color(0xFFF1F5F9),
                       ),
-                      // Points
                       Expanded(
                         child: Column(
                           children: [
@@ -135,19 +150,15 @@ class ChildMissionCompleteScreen extends StatelessWidget {
                     ],
                   ),
                 ),
-
                 const Spacer(),
-
-                // See Badges Button (Flat)
                 SizedBox(
                   width: double.infinity,
                   height: 56,
                   child: FilledButton.icon(
                     onPressed: () {
-                      ChildButtonVoice.press('رؤية أوسمتي', () async {
-                        if (!context.mounted) return;
-                        context.push('/child/badges');
-                      }, single: true);
+                      _tap('رؤية أوسمتي', (router) {
+                        router.push('/child/badges');
+                      });
                     },
                     icon: const Icon(
                       Icons.workspace_premium_rounded,
@@ -164,9 +175,7 @@ class ChildMissionCompleteScreen extends StatelessWidget {
                     ),
                     style: FilledButton.styleFrom(
                       backgroundColor: const Color(0xFF8B5CF6),
-                      // Flat calm purple
                       elevation: 0,
-                      // No shadow
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(
                           AppColors.border_radius,
@@ -175,26 +184,21 @@ class ChildMissionCompleteScreen extends StatelessWidget {
                     ),
                   ),
                 ),
-
                 const SizedBox(height: 12),
-
-                // Go to Dashboard Button (Flat Outline)
                 SizedBox(
                   width: double.infinity,
                   height: 56,
                   child: OutlinedButton(
                     onPressed: () {
-                      ChildButtonVoice.press('العودة للرئيسية', () async {
-                        if (!context.mounted) return;
-                        context.go('/child-dashboard');
-                      }, single: true);
+                      _tap('العودة للرئيسية', (router) {
+                        router.go('/child-dashboard');
+                      });
                     },
                     style: OutlinedButton.styleFrom(
                       side: const BorderSide(
                         color: Color(0xFFCBD5E1),
                         width: 2,
                       ),
-                      // Unified soft border
                       backgroundColor: Colors.white,
                       elevation: 0,
                       shape: RoundedRectangleBorder(
@@ -208,7 +212,7 @@ class ChildMissionCompleteScreen extends StatelessWidget {
                       style: TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.bold,
-                        color: Color(0xFF64748B), // Soft text
+                        color: Color(0xFF64748B),
                       ),
                     ),
                   ),

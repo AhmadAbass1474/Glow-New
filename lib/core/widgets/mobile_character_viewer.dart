@@ -478,6 +478,22 @@ class _MobileCharacterViewerState extends State<MobileCharacterViewer>
     super.dispose();
   }
 
+  /// Hybrid composition keeps the character inside its box. The default
+  /// Android surface sits above the Flutter buttons and swallows their taps.
+  Widget _characterSurface(WebViewController controller) {
+    final platform = controller.platform;
+    if (platform is AndroidWebViewController) {
+      return WebViewWidget.fromPlatformCreationParams(
+        key: ValueKey(controller),
+        params: AndroidWebViewWidgetCreationParams(
+          controller: platform,
+          displayWithHybridComposition: true,
+        ),
+      );
+    }
+    return WebViewWidget(key: ValueKey(controller), controller: controller);
+  }
+
   @override
   Widget build(BuildContext context) => Semantics(
     label: 'شخصية ${CharacterHelper.getCleanName(widget.characterName)} متحركة',
@@ -485,7 +501,7 @@ class _MobileCharacterViewerState extends State<MobileCharacterViewer>
       fit: StackFit.expand,
       children: [
         if (_controller != null && _error == null)
-          WebViewWidget(key: ValueKey(_controller), controller: _controller!),
+          _characterSurface(_controller!),
         if (!_ready && _error == null)
           ColoredBox(
             color: const Color(0xFFF4F7F5),

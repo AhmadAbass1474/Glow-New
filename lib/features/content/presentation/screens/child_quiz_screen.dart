@@ -232,12 +232,8 @@ class _ChildQuizScreenState extends State<ChildQuizScreen> {
                             
                             return GestureDetector(
                               onTap: () {
-                                ChildButtonVoice.press(opt, () async {
-                                  if (!mounted) return;
-                                  setState(() {
-                                    _selectedIndex = index;
-                                  });
-                                });
+                                setState(() => _selectedIndex = index);
+                                ChildButtonVoice.press(opt, () async {});
                               },
                               child: AnimatedContainer(
                                 duration: const Duration(milliseconds: 200),

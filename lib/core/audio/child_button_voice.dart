@@ -21,54 +21,42 @@ class ChildButtonVoice {
   static final speaking = ValueNotifier<bool>(false);
 
   static var _playId = 0;
-  static var _busy = false;
+  static var _pressSerial = 0;
   static var _contextReady = false;
   static var _playerReady = false;
-  static String? _queuedPhrase;
-  static Future<void> Function()? _queuedAction;
   static final _durations = <String, Duration>{};
 
   /// Plays [phrase], then runs [action].
-  /// A tap while another clip is playing is kept and runs after it,
-  /// so a button is never ignored.
-  /// Returns false when the tap was only queued.
+  /// A newer tap replaces the previous one. Speech cannot cancel the action.
   static Future<bool> press(
     String phrase,
     Future<void> Function() action, {
     bool single = false,
   }) async {
-    if (_busy) {
-      _queuedPhrase = phrase;
-      _queuedAction = action;
-      return false;
-    }
-    _busy = true;
-
-    try {
-      await _playLocal(phrase.trim()).timeout(const Duration(seconds: 12));
-    } catch (_) {}
+    final ticket = ++_pressSerial;
+    final gate = Completer<void>();
+    final cap = Timer(const Duration(seconds: 3), () {
+      if (!gate.isCompleted) gate.complete();
+    });
+    unawaited(() async {
+      try {
+        await _playLocal(phrase.trim());
+      } catch (_) {}
+      if (!gate.isCompleted) gate.complete();
+    }());
+    await gate.future;
+    cap.cancel();
+    if (ticket != _pressSerial) return false;
+    ++_playId;
     try {
       await action();
     } catch (_) {}
-    finally {
-      _busy = false;
-    }
-
-    final nextPhrase = _queuedPhrase;
-    final nextAction = _queuedAction;
-    _queuedPhrase = null;
-    _queuedAction = null;
-    if (nextPhrase != null && nextAction != null) {
-      await press(nextPhrase, nextAction, single: single);
-    }
     return true;
   }
 
   /// Stops whatever is playing so a closed screen does not keep talking.
   static Future<void> stop() async {
     ++_playId;
-    _queuedPhrase = null;
-    _queuedAction = null;
     speaking.value = false;
     try {
       await _player.stop();
@@ -157,9 +145,6 @@ class ChildButtonVoice {
     int id,
     String cacheKey,
   ) async {
-    try {
-      await _player.stop().timeout(const Duration(milliseconds: 300));
-    } catch (_) {}
     if (id != _playId) return;
     await _player.play(source).timeout(const Duration(seconds: 2));
     if (id != _playId) return;
@@ -171,16 +156,19 @@ class ChildButtonVoice {
             .timeout(const Duration(milliseconds: 400));
         if (duration != null &&
             duration > Duration.zero &&
-            duration < const Duration(seconds: 20)) {
+            duration <= const Duration(seconds: 4)) {
           _durations[cacheKey] = duration;
         } else {
           duration = null;
         }
       } catch (_) {}
     }
-    final wait = duration == null || duration <= Duration.zero
+    var wait = duration == null || duration <= Duration.zero
         ? const Duration(milliseconds: 900)
         : duration;
+    if (wait > const Duration(seconds: 4)) {
+      wait = const Duration(seconds: 4);
+    }
     final end = DateTime.now().add(wait);
     while (id == _playId && DateTime.now().isBefore(end)) {
       final left = end.difference(DateTime.now());

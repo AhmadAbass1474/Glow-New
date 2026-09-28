@@ -13,6 +13,7 @@ const childButtonClips = <String, String>{
   "لقد أنهيت مشاهد القصة بنجاح": "voice/child/118a0826531c.mp3",
   "الآن حان وقت التحدي لإثبات مهارتك وجمع النقاط": "voice/child/e58200b81825.mp3",
   "اختبر نفسك": "voice/child/380af366e4a1.mp3",
+  "أحسنت يا بطل": "voice/child/3624f8cb1783.mp3",
   "إرسال الإجابة": "voice/child/19a1f855e8ae.mp3",
   "رؤية أوسمتي": "voice/child/0537e18c7c46.mp3",
   "العودة للرئيسية": "voice/child/3fb5312625d8.mp3",
