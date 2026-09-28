@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/di/injection_container.dart';
+import '../../../../core/widgets/admin_voice_field.dart';
 import '../../../content/domain/entities/mission_entity.dart';
 import '../../../content/domain/entities/question_entity.dart';
 import '../../../content/presentation/bloc/content_bloc.dart';
@@ -104,17 +105,21 @@ class _AddQuestionScreenState extends State<AddQuestionScreen> {
           builder: (context, state) {
             final isLoading = state.maybeWhen(loading: () => true, orElse: () => false);
 
-            return Padding(
+            return SafeArea(
+              child: Padding(
               padding: const EdgeInsets.all(16.0),
               child: Form(
                 key: _formKey,
-                child: ListView(
+                child: Column(
                   children: [
-                    TextFormField(
+                    Expanded(
+                      child: ListView(
+                  children: [
+                    AdminVoiceField(
                       controller: _questionController,
-                      decoration: const InputDecoration(hintText: 'نص السؤال'),
-                      validator: (val) => val == null || val.isEmpty ? 'مطلوب' : null,
+                      hint: 'نص السؤال',
                       maxLines: 3,
+                      validator: (val) => val == null || val.isEmpty ? 'مطلوب' : null,
                     ),
                     const SizedBox(height: 24),
                     Text(
@@ -137,9 +142,9 @@ class _AddQuestionScreenState extends State<AddQuestionScreen> {
                               },
                             ),
                             Expanded(
-                              child: TextFormField(
+                              child: AdminVoiceField(
                                 controller: _optionsControllers[index],
-                                decoration: InputDecoration(hintText: 'الخيار ${index + 1}'),
+                                hint: 'الخيار ${index + 1}',
                                 validator: (val) => val == null || val.isEmpty ? 'مطلوب' : null,
                               ),
                             ),
@@ -147,17 +152,24 @@ class _AddQuestionScreenState extends State<AddQuestionScreen> {
                         ),
                       );
                     }),
-                    const SizedBox(height: 32),
+                  ],
+                    ),
+                    ),
+                    const SizedBox(height: 16),
                     SizedBox(
                       width: double.infinity,
                       child: FilledButton(
                         onPressed: isLoading ? null : _submit,
-                        child: isLoading ? const CircularProgressIndicator() : Text(widget.questionToEdit != null ? 'تحديث السؤال' : 'حفظ السؤال'),
+                        style: FilledButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                        ),
+                        child: isLoading ? const SizedBox(height: 24, width: 24, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) : Text(widget.questionToEdit != null ? 'تحديث السؤال' : 'حفظ السؤال'),
                       ),
                     ),
                   ],
                 ),
               ),
+            ),
             );
           },
         ),

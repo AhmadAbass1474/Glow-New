@@ -50,11 +50,15 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
             orElse: () => false,
           );
 
-          return SingleChildScrollView(
+          return SafeArea(
+            child: Padding(
             padding: const EdgeInsets.all(10.0),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                Expanded(
+                  child: ListView(
+                    children: [
                 TextField(
                   controller: _emailController,
                   decoration: const InputDecoration(
@@ -72,8 +76,14 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
                   ),
                   obscureText: true,
                 ),
-                const SizedBox(height: 32),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
                 FilledButton(
+                  style: FilledButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                  ),
                   onPressed: isLoading ? null : () {
                     final email = _emailController.text.trim();
                     final password = _passwordController.text.trim();
@@ -91,10 +101,15 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
                     ));
                   },
                   child: isLoading
-                      ? const CircularProgressIndicator(color: Colors.white)
+                      ? const SizedBox(
+                          height: 24,
+                          width: 24,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                        )
                       : const Text('تسجيل الدخول'),
                 ),
               ],
+            ),
             ),
           );
         },

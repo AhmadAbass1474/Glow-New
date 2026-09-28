@@ -1,11 +1,8 @@
 import 'dart:io';
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
-import '../../../../core/widgets/smart_character_viewer.dart';
 import '../../../../core/di/injection_container.dart';
-import '../../../../core/theme/app_colors.dart';
 import '../../../content/domain/entities/mission_entity.dart';
 import '../../../content/domain/entities/story_entity.dart';
 import '../../../content/presentation/bloc/content_bloc.dart';
@@ -18,6 +15,8 @@ import '../../../../core/utils/character_helper.dart';
 import '../../../../core/models/story_timeline.dart';
 import '../../../../core/widgets/story_timeline_editor.dart';
 import '../../../../core/audio/story_sentence_voice.dart';
+import '../../../../core/services/resource_manager.dart';
+import '../../../../core/widgets/admin_voice_field.dart';
 
 class _SentenceLine {
   _SentenceLine() {
@@ -65,41 +64,156 @@ class _AddStoryScreenState extends State<AddStoryScreen> {
   final _titleController = TextEditingController();
   final _contentController = TextEditingController();
 
-  File? _characterFile;
   File? _audioFile;
   StoryTimeline? _timeline;
   late ContentBloc _contentBloc;
-  
+
   AudioPlayer? _audioPlayer;
   AudioPlayer? _linePlayer;
   bool _isPlaying = false;
   int _step = 0;
   bool _joining = false;
+  bool _preparingEdit = false;
+  bool _audioRebuilt = false;
   String? _sceneSignature;
+  String _savedSceneKey = '';
   final List<_SentenceLine> _lines = [];
   final ValueNotifier<Duration> _positionNotifier = ValueNotifier(Duration.zero);
-  Duration _totalDuration = Duration.zero;
   StreamSubscription? _playerStateSubscription;
-  StreamSubscription? _durationSubscription;
   StreamSubscription? _positionSubscription;
 
   @override
   void initState() {
     super.initState();
     _contentBloc = sl<ContentBloc>();
-    if (widget.storyToEdit != null) {
-      _titleController.text = widget.storyToEdit!.title;
-      _contentController.text = widget.storyToEdit!.content;
-      
-      if (widget.storyToEdit!.audioUrl != null && widget.storyToEdit!.audioUrl!.isNotEmpty) {
-        _initAudio(UrlSource(widget.storyToEdit!.audioUrl!));
+    final story = widget.storyToEdit;
+    if (story == null) return;
+    _titleController.text = story.title;
+    _contentController.text = story.content;
+    if (story.timelineData != null) {
+      try {
+        _timeline = StoryTimeline.fromJson(jsonDecode(story.timelineData!));
+      } catch (_) {}
+    }
+    _hydrateLines(story);
+    final url = story.audioUrl?.trim() ?? '';
+    if (url.isNotEmpty) {
+      _preparingEdit = true;
+      unawaited(_loadExistingAudio(url));
+    }
+  }
+
+  void _hydrateLines(StoryEntity story) {
+    final texts = story.content
+        .split('\n')
+        .map((line) => line.trim())
+        .where((line) => line.isNotEmpty)
+        .toList();
+    final blocks = _timeline?.blocks ?? const <StoryBlock>[];
+    for (var i = 0; i < texts.length; i++) {
+      final line = _SentenceLine();
+      line.controller.text = texts[i];
+      final fromBlock = i < blocks.length ? blocks[i].characterId : '';
+      if (_sceneCharacters.any((character) => character.$1 == fromBlock)) {
+        line.characterId = fromBlock;
+      } else if (_sceneCharacters.any(
+        (character) => character.$1 == story.characterName,
+      )) {
+        line.characterId = story.characterName;
       }
-      if (widget.storyToEdit!.timelineData != null) {
-        try {
-          _timeline = StoryTimeline.fromJson(jsonDecode(widget.storyToEdit!.timelineData!));
-        } catch (_) {}
+      line.controller.addListener(() {
+        if (mounted) setState(() {});
+      });
+      _lines.add(line);
+    }
+    _savedSceneKey = _sceneKey(_lines);
+  }
+
+  String _sceneKey(List<_SentenceLine> lines) {
+    return lines
+        .map((line) => '${line.characterId}|${line.controller.text.trim()}')
+        .join('\n');
+  }
+
+  Future<void> _loadExistingAudio(String url) async {
+    try {
+      final resources = sl<ResourceManager>();
+      final path = resources.getLocalFilePath(url) ??
+          await resources.downloadAndCacheFile(url, folder: 'audio');
+      if (!mounted) return;
+      if (path != null && File(path).existsSync()) {
+        _audioFile = File(path);
+        await _initAudio(DeviceFileSource(path));
+      } else if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('تعذر تحميل صوت القصة. ولّد الجمل من جديد.'),
+          ),
+        );
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('تعذر تحميل صوت القصة. ولّد الجمل من جديد.'),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _preparingEdit = false;
+          if (_audioFile != null) _step = 1;
+        });
       }
     }
+  }
+
+  StoryTimeline _keepLanes(List<StoryBlock> blocks, double seconds) {
+    final previous = _timeline;
+    double fit(double start, double end) {
+      final capped = end > seconds ? seconds : end;
+      return capped > start ? capped : start;
+    }
+
+    return StoryTimeline(
+      blocks: blocks,
+      totalDuration: seconds,
+      motionBlocks: [
+        for (final block in previous?.motionBlocks ?? const <StoryMotionBlock>[])
+          if (block.startTime < seconds)
+            StoryMotionBlock(
+              motionId: block.motionId,
+              startTime: block.startTime,
+              endTime: fit(block.startTime, block.endTime),
+            ),
+      ].where((block) => block.endTime > block.startTime).toList(),
+      hatBlocks: [
+        for (final block in previous?.hatBlocks ?? const <StoryHatBlock>[])
+          if (block.startTime < seconds)
+            StoryHatBlock(
+              colorHex: block.colorHex,
+              startTime: block.startTime,
+              endTime: fit(block.startTime, block.endTime),
+            ),
+      ].where((block) => block.endTime > block.startTime).toList(),
+      glassesBlocks: [
+        for (final block in previous?.glassesBlocks ?? const <StoryGlassesBlock>[])
+          if (block.startTime < seconds)
+            StoryGlassesBlock(
+              startTime: block.startTime,
+              endTime: fit(block.startTime, block.endTime),
+            ),
+      ].where((block) => block.endTime > block.startTime).toList(),
+      musclesBlocks: [
+        for (final block in previous?.musclesBlocks ?? const <StoryMusclesBlock>[])
+          if (block.startTime < seconds)
+            StoryMusclesBlock(
+              startTime: block.startTime,
+              endTime: fit(block.startTime, block.endTime),
+            ),
+      ].where((block) => block.endTime > block.startTime).toList(),
+    );
   }
 
   @override
@@ -111,7 +225,6 @@ class _AddStoryScreenState extends State<AddStoryScreen> {
     }
     _contentBloc.close();
     _playerStateSubscription?.cancel();
-    _durationSubscription?.cancel();
     _positionSubscription?.cancel();
     _audioPlayer?.dispose();
     _linePlayer?.dispose();
@@ -122,11 +235,10 @@ class _AddStoryScreenState extends State<AddStoryScreen> {
   Future<void> _initAudio(Source source) async {
     _audioPlayer?.dispose();
     _playerStateSubscription?.cancel();
-    _durationSubscription?.cancel();
     _positionSubscription?.cancel();
-    
+
     _audioPlayer = AudioPlayer();
-    
+
     _playerStateSubscription = _audioPlayer!.onPlayerStateChanged.listen((state) {
       if (mounted) {
         setState(() {
@@ -138,14 +250,6 @@ class _AddStoryScreenState extends State<AddStoryScreen> {
       }
     });
 
-    _durationSubscription = _audioPlayer!.onDurationChanged.listen((duration) {
-      if (mounted) {
-        setState(() {
-          _totalDuration = duration;
-        });
-      }
-    });
-
     _positionSubscription = _audioPlayer!.onPositionChanged.listen((position) {
       if (mounted) {
         _positionNotifier.value = position;
@@ -154,14 +258,11 @@ class _AddStoryScreenState extends State<AddStoryScreen> {
 
     await _audioPlayer!.setReleaseMode(ReleaseMode.stop);
     await _audioPlayer!.setSource(source);
-    // When changing audio, pause playback
     setState(() {
       _isPlaying = false;
       _positionNotifier.value = Duration.zero;
     });
   }
-
-
 
   void _togglePlayPause() async {
     if (_audioPlayer == null) return;
@@ -169,213 +270,6 @@ class _AddStoryScreenState extends State<AddStoryScreen> {
       await _audioPlayer!.pause();
     } else {
       await _audioPlayer!.resume();
-    }
-  }
-
-  Future<void> _pickAudio() async {
-    await showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) => Container(
-        decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.surface,
-          borderRadius: BorderRadius.circular(AppColors.border_radius),
-        ),
-        padding: const EdgeInsets.fromLTRB(10, 10, 10, 50),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // Handle
-            Container(
-              width: 40,
-              height: 4,
-              margin: const EdgeInsets.only(bottom: 10),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.outlineVariant,
-                borderRadius: BorderRadius.circular(AppColors.border_radius),
-              ),
-            ),
-            Text(
-              'اختر ملف صوتي',
-              style: Theme.of(
-                context,
-              ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'اختر ملفاً صوتياً من هاتفك لإرفاقه بالقصة',
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-              ),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 24),
-            // Pick file option
-            InkWell(
-              onTap: () async {
-                Navigator.pop(ctx);
-                try {
-                  final result = await FilePicker.pickFiles(
-                    type: FileType.custom,
-                    allowedExtensions: ['mp3', 'wav', 'm4a', 'aac'],
-                  );
-                  if (result != null && result.isNotEmpty) {
-                    final pickedPath = result.first.path;
-                    if (pickedPath != null) {
-                      setState(() {
-                        _audioFile = File(pickedPath);
-                      });
-                      _initAudio(DeviceFileSource(pickedPath));
-                    }
-                  }
-                } catch (e) {
-                  if (mounted) {
-                    ScaffoldMessenger.of(
-                      context,
-                    ).showSnackBar(SnackBar(content: Text('حدث خطأ: $e')));
-                  }
-                }
-              },
-              borderRadius: BorderRadius.circular(AppColors.border_radius),
-              child: Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Theme.of(
-                    context,
-                  ).colorScheme.primaryContainer.withOpacity(0.4),
-                  borderRadius: BorderRadius.circular(AppColors.border_radius),
-                ),
-                child: Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: Theme.of(context).colorScheme.primary,
-                        borderRadius: BorderRadius.circular(
-                          AppColors.border_radius,
-                        ),
-                      ),
-                      child: const Icon(Icons.folder_open, color: Colors.white),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'اختر من الملفات',
-                            style: Theme.of(context).textTheme.titleSmall
-                                ?.copyWith(fontWeight: FontWeight.bold),
-                          ),
-                          Text(
-                            'MP3, WAV, M4A, AAC',
-                            style: Theme.of(context).textTheme.bodySmall
-                                ?.copyWith(
-                                  color: Theme.of(
-                                    context,
-                                  ).colorScheme.onSurfaceVariant,
-                                ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    Icon(
-                      Icons.chevron_right,
-                      color: Theme.of(context).colorScheme.primary,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            if (_audioFile != null) ...[
-              const SizedBox(height: 12),
-              // Remove file option
-              InkWell(
-                onTap: () {
-                  setState(() => _audioFile = null);
-                  Navigator.pop(ctx);
-                },
-                borderRadius: BorderRadius.circular(AppColors.border_radius),
-                child: Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: Theme.of(
-                      context,
-                    ).colorScheme.errorContainer.withOpacity(0.4),
-                    borderRadius: BorderRadius.circular(
-                      AppColors.border_radius,
-                    ),
-                  ),
-                  child: Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(10),
-                        decoration: BoxDecoration(
-                          color: Theme.of(context).colorScheme.error,
-                          borderRadius: BorderRadius.circular(
-                            AppColors.border_radius,
-                          ),
-                        ),
-                        child: const Icon(
-                          Icons.delete_outline,
-                          color: Colors.white,
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      Text(
-                        'إزالة الملف الصوتي',
-                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.bold,
-                          color: Theme.of(context).colorScheme.error,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-            const SizedBox(height: 12),
-            Container(
-              width: double.infinity,
-              child: OutlinedButton(
-                style: const ButtonStyle(
-                  side: WidgetStatePropertyAll(
-                    BorderSide(color: AppColors.inputBorder),
-                  ),
-                ),
-                onPressed: () => Navigator.pop(ctx),
-                child: const Text(
-                  'إلغاء',
-                  style: TextStyle(color: Colors.black),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Future<void> _pickCharacter() async {
-    try {
-      final result = await FilePicker.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: ['glb', 'gltf'],
-      );
-      if (result != null && result.isNotEmpty) {
-        final pickedPath = result.first.path;
-        if (pickedPath != null) {
-          setState(() {
-            _characterFile = File(pickedPath);
-          });
-        }
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('حدث خطأ أثناء رفع الشخصية: $e')),
-        );
-      }
     }
   }
 
@@ -433,18 +327,28 @@ class _AddStoryScreenState extends State<AddStoryScreen> {
       );
       return;
     }
-    if (ready.isEmpty || ready.any((line) => line.audio == null || line.seconds <= 0)) {
+    if (ready.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('ولّد صوت كل جملة قبل التالي')),
+        const SnackBar(content: Text('أضف جملة واحدة على الأقل')),
       );
       return;
     }
 
-    final signature = ready
-        .map((line) => '${line.characterId}|${line.spokenText}|${line.seconds}')
-        .join('\n');
-    if (signature == _sceneSignature && _audioFile != null && _timeline != null) {
+    final sceneKey = _sceneKey(ready);
+    final sameScene = _audioFile != null &&
+        _timeline != null &&
+        (sceneKey == _sceneSignature ||
+            (!_audioRebuilt && sceneKey == _savedSceneKey && _savedSceneKey.isNotEmpty));
+    if (sameScene) {
+      _contentController.text = ready.map((line) => line.controller.text.trim()).join('\n');
       setState(() => _step = 1);
+      return;
+    }
+
+    if (ready.any((line) => line.audio == null || line.seconds <= 0)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('ولّد صوت كل جملة قبل التالي')),
+      );
       return;
     }
 
@@ -475,9 +379,10 @@ class _AddStoryScreenState extends State<AddStoryScreen> {
         );
       }
       _contentController.text = ready.map((line) => line.controller.text.trim()).join('\n');
-      _timeline = StoryTimeline(blocks: blocks, totalDuration: merged.seconds);
+      _timeline = _keepLanes(blocks, merged.seconds);
       _audioFile = merged.file;
-      _sceneSignature = signature;
+      _audioRebuilt = true;
+      _sceneSignature = sceneKey;
       await _initAudio(DeviceFileSource(merged.file.path));
       if (!mounted) return;
       setState(() => _step = 1);
@@ -508,7 +413,7 @@ class _AddStoryScreenState extends State<AddStoryScreen> {
             children: [
               Expanded(
                 child: DropdownButtonFormField<String>(
-                  value: line.characterId,
+                  initialValue: line.characterId,
                   decoration: const InputDecoration(isDense: true),
                   items: [
                     for (final character in _sceneCharacters)
@@ -556,23 +461,16 @@ class _AddStoryScreenState extends State<AddStoryScreen> {
 
   void _submit() {
     if (_formKey.currentState!.validate()) {
-      String charName = 'qort'; // Default character
-      
+      String charName = 'qort';
+
       if (_timeline != null && _timeline!.blocks.isNotEmpty) {
         charName = _timeline!.blocks.first.characterId;
       } else if (widget.storyToEdit != null && widget.storyToEdit!.characterName.isNotEmpty) {
         charName = widget.storyToEdit!.characterName;
       }
-      
-      if (_characterFile != null) {
-        // We will default the custom model to use 'fort' color scheme if no timeline is provided.
-        // Or if timeline is provided, we use the color scheme of the first character.
-        charName = 'custom|${CharacterHelper.getColorKey(charName)}|مخصصة';
-      }
 
       final story = StoryEntity(
         id: widget.storyToEdit?.id ?? '',
-        // Supabase gen_random_uuid will handle this if empty
         missionId: widget.mission.id,
         title: _titleController.text.trim(),
         characterName: charName,
@@ -582,20 +480,19 @@ class _AddStoryScreenState extends State<AddStoryScreen> {
         orderIndex: widget.storyToEdit?.orderIndex ?? 0,
         timelineData: _timeline != null ? jsonEncode(_timeline!.toJson()) : null,
       );
+      final audioFile = widget.storyToEdit == null || _audioRebuilt ? _audioFile : null;
       if (widget.storyToEdit != null) {
         _contentBloc.add(
           ContentEvent.updateStory(
             story,
-            audioFile: _audioFile,
-            characterFile: _characterFile,
+            audioFile: audioFile,
           ),
         );
       } else {
         _contentBloc.add(
           ContentEvent.addStory(
             story,
-            audioFile: _audioFile,
-            characterFile: _characterFile,
+            audioFile: audioFile,
           ),
         );
       }
@@ -604,20 +501,21 @@ class _AddStoryScreenState extends State<AddStoryScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final editing = widget.storyToEdit != null;
     return BlocProvider.value(
       value: _contentBloc,
       child: Scaffold(
         backgroundColor: Theme.of(context).colorScheme.surface,
         appBar: AppBar(
-          leading: widget.storyToEdit == null && _step == 1
+          leading: _step == 1
               ? BackButton(onPressed: () => setState(() => _step = 0))
               : null,
           title: Text(
-            widget.storyToEdit != null
-                ? 'تعديل القصة'
-                : _step == 0
-                    ? 'كتابة المشهد'
-                    : 'المونتاج',
+            _step == 1
+                ? 'المونتاج'
+                : editing
+                    ? 'تعديل القصة'
+                    : 'كتابة المشهد',
           ),
           elevation: 0,
           surfaceTintColor: Colors.white,
@@ -632,7 +530,7 @@ class _AddStoryScreenState extends State<AddStoryScreen> {
                 context.pop(true);
               },
               storiesLoaded: (_) {
-                if (widget.storyToEdit != null) {
+                if (editing) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(content: Text('تم تحديث القصة بنجاح!')),
                   );
@@ -649,6 +547,7 @@ class _AddStoryScreenState extends State<AddStoryScreen> {
           },
           builder: (context, state) {
             final isLoading = _joining ||
+                _preparingEdit ||
                 state.maybeWhen(
                   loading: () => true,
                   orElse: () => false,
@@ -662,88 +561,46 @@ class _AddStoryScreenState extends State<AddStoryScreen> {
                   child: Column(
                     children: [
                       Expanded(
-                        child: ListView(
-                          children: [
-                            if (widget.storyToEdit != null) ...[
-                              if (_audioFile == null)
-                                TextFormField(
-                                  readOnly: true,
-                                  onTap: _pickAudio,
-                                  decoration: const InputDecoration(
-                                    hintText: 'إرفاق ملف صوتي',
-                                  ),
-                                ),
-                              if (_audioFile != null) ...[
-                                const SizedBox(height: 16),
-                                StoryTimelineEditor(
-                                  audioFile: _audioFile!,
-                                  initialTimeline: _timeline,
-                                  positionNotifier: _positionNotifier,
-                                  audioPlayer: _audioPlayer,
-                                  isPlaying: _isPlaying,
-                                  onTogglePlay: _togglePlayPause,
-                                  onTimelineChanged: (val) {
-                                    setState(() => _timeline = val);
-                                  },
-                                ),
-                              ],
-                              const SizedBox(height: 24),
-                              TextFormField(
-                                controller: _titleController,
-                                decoration: const InputDecoration(
-                                  hintText: 'عنوان القصة',
-                                ),
-                                validator: (val) =>
-                                    val == null || val.isEmpty ? 'مطلوب' : null,
-                              ),
-                              const SizedBox(height: 16),
-                              TextFormField(
-                                controller: _contentController,
-                                decoration: const InputDecoration(
-                                  hintText: 'محتوى القصة',
-                                ),
-                                maxLines: 4,
-                                validator: (val) =>
-                                    val == null || val.isEmpty ? 'مطلوب' : null,
-                              ),
-                            ] else if (_step == 0) ...[
-                              Row(
+                        child: _preparingEdit
+                            ? const Center(child: CircularProgressIndicator())
+                            : ListView(
                                 children: [
-                                  Expanded(
-                                    child: TextFormField(
-                                      controller: _titleController,
-                                      decoration: const InputDecoration(
-                                        hintText: 'عنوان القصة',
-                                      ),
+                                  if (_step == 0) ...[
+                                    Row(
+                                      children: [
+                                        Expanded(
+                                          child: AdminVoiceField(
+                                            controller: _titleController,
+                                            hint: 'عنوان القصة',
+                                          ),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        IconButton.filledTonal(
+                                          onPressed: _addLine,
+                                          icon: const Icon(Icons.add),
+                                          tooltip: 'إضافة جملة',
+                                        ),
+                                      ],
                                     ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  IconButton.filledTonal(
-                                    onPressed: _addLine,
-                                    icon: const Icon(Icons.add),
-                                    tooltip: 'إضافة جملة',
-                                  ),
+                                    const SizedBox(height: 16),
+                                    for (var i = 0; i < _lines.length; i++)
+                                      _sentenceRow(_lines[i], i),
+                                  ] else if (_audioFile != null) ...[
+                                    StoryTimelineEditor(
+                                      key: ValueKey(_audioFile!.path),
+                                      audioFile: _audioFile!,
+                                      initialTimeline: _timeline,
+                                      positionNotifier: _positionNotifier,
+                                      audioPlayer: _audioPlayer,
+                                      isPlaying: _isPlaying,
+                                      onTogglePlay: _togglePlayPause,
+                                      onTimelineChanged: (val) {
+                                        setState(() => _timeline = val);
+                                      },
+                                    ),
+                                  ],
                                 ],
                               ),
-                              const SizedBox(height: 16),
-                              for (var i = 0; i < _lines.length; i++)
-                                _sentenceRow(_lines[i], i),
-                            ] else if (_audioFile != null) ...[
-                              StoryTimelineEditor(
-                                key: ValueKey(_audioFile!.path),
-                                audioFile: _audioFile!,
-                                initialTimeline: _timeline,
-                                positionNotifier: _positionNotifier,
-                                audioPlayer: _audioPlayer,
-                                isPlaying: _isPlaying,
-                                onTogglePlay: _togglePlayPause,
-                                onTimelineChanged: (val) {
-                                  setState(() => _timeline = val);
-                                },
-                              ),
-                            ],
-                          ],
-                        ),
                       ),
                       const SizedBox(height: 16),
                       SizedBox(
@@ -751,7 +608,7 @@ class _AddStoryScreenState extends State<AddStoryScreen> {
                         child: FilledButton(
                           onPressed: isLoading
                               ? null
-                              : widget.storyToEdit == null && _step == 0
+                              : _step == 0
                                   ? _openTimeline
                                   : _submit,
                           style: FilledButton.styleFrom(
@@ -767,10 +624,10 @@ class _AddStoryScreenState extends State<AddStoryScreen> {
                                   ),
                                 )
                               : Text(
-                                  widget.storyToEdit != null
-                                      ? 'تحديث القصة'
-                                      : _step == 0
-                                          ? 'التالي'
+                                  _step == 0
+                                      ? 'التالي'
+                                      : editing
+                                          ? 'تحديث القصة'
                                           : 'نشر القصة الآن',
                                   style: const TextStyle(
                                     fontSize: 18,

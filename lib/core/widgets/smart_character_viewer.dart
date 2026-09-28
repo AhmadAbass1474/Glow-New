@@ -156,7 +156,7 @@ class _CharacterSurfaceState extends State<_CharacterSurface>
     // the GLB and recreating the EGL context whenever the layout changes.
     final pixels =
         (widget.size.longestSide * MediaQuery.devicePixelRatioOf(context))
-            .clamp(512.0, _compatibilityMode ? 640.0 : 2048.0);
+            .clamp(512.0, _compatibilityMode ? 640.0 : 1280.0);
     final view = _GuardedThreeJS(
       size: _canvasSize,
       canRender: _canRender,

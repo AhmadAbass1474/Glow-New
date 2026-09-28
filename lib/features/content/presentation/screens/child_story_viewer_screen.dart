@@ -60,6 +60,7 @@ class _ChildStoryViewerScreenState extends State<ChildStoryViewerScreen>
   Timer? _fallbackTimer;
   final Stopwatch _fallbackClock = Stopwatch();
   Timer? _pollingTimer;
+  DateTime _lastStreamPositionAt = DateTime.fromMillisecondsSinceEpoch(0);
 
   @override
   void initState() {
@@ -157,6 +158,7 @@ class _ChildStoryViewerScreenState extends State<ChildStoryViewerScreen>
       }),
       player.onPositionChanged.listen((position) {
         if (_isCurrentScene(generation) && _hasAudio) {
+          _lastStreamPositionAt = DateTime.now();
           _positionNotifier.value = position;
         }
       }, onError: (Object error) {
@@ -198,11 +200,15 @@ class _ChildStoryViewerScreenState extends State<ChildStoryViewerScreen>
 
   void _startPositionPolling(AudioPlayer player, int generation) {
     _pollingTimer?.cancel();
-    _pollingTimer = Timer.periodic(const Duration(milliseconds: 100), (
+    _pollingTimer = Timer.periodic(const Duration(milliseconds: 400), (
       timer,
     ) async {
       if (!mounted || !_isPlaying || !_isCurrentScene(generation)) {
         timer.cancel();
+        return;
+      }
+      if (DateTime.now().difference(_lastStreamPositionAt) <
+          const Duration(milliseconds: 350)) {
         return;
       }
       try {

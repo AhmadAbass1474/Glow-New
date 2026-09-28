@@ -2,6 +2,8 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:internet_connection_checker/internet_connection_checker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../../../core/audio/admin_phrase_voice.dart';
+import '../../../../core/audio/child_button_clips.dart';
 import '../../../../core/network/network_info.dart';
 import '../../../../core/services/resource_manager.dart';
 import '../datasources/content_local_data_source.dart';
@@ -85,13 +87,42 @@ class SyncService {
   Future<void> _prefetchCachedStoryAudio() async {
     try {
       final stories = await localDataSource.getAllCachedStories();
-      await Future.wait(
-        stories.map((story) {
+      final phrases = <String>{};
+      final worlds = await localDataSource.getCachedWorlds();
+      final missions = await localDataSource.getAllCachedMissions();
+      for (final world in worlds) {
+        phrases.add(world.title);
+      }
+      for (final mission in missions) {
+        phrases.add(mission.title);
+        phrases.add(mission.badgeName);
+        final questions = await localDataSource.getCachedQuestions(mission.id);
+        for (final question in questions) {
+          phrases.addAll(question.options);
+        }
+      }
+      for (final story in stories) {
+        phrases.add(story.title);
+      }
+      await Future.wait([
+        ...stories.map((story) {
           final url = story.audioUrl?.trim() ?? '';
           if (!url.startsWith('http')) return Future<void>.value();
           return resourceManager.downloadAndCacheFile(url, folder: 'audio');
         }),
-      );
+        ...phrases
+            .map((phrase) => phrase.trim())
+            .where(
+              (phrase) =>
+                  phrase.isNotEmpty && !childButtonClips.containsKey(phrase),
+            )
+            .map(
+              (phrase) => resourceManager.downloadAndCacheFile(
+                AdminPhraseVoice.urlFor(phrase),
+                folder: 'audio',
+              ),
+            ),
+      ]);
     } catch (error) {
       debugPrint('Story audio prefetch failed: $error');
     }

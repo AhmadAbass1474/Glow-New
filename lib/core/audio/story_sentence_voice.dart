@@ -33,8 +33,28 @@ class StorySentenceVoice {
   static Future<({File file, double seconds})> speak({
     required String characterId,
     required String text,
+  }) {
+    return _render(
+      voiceId: voices[characterId] ?? voices['qort']!,
+      pitch: (_pitch[characterId] ?? 1.12) + 0.06,
+      text: text,
+    );
+  }
+
+  /// One soft child narrator for buttons and field speech.
+  static Future<({File file, double seconds})> speakNarrator(String text) {
+    return _render(
+      voiceId: 'pFZP5JQG7iQjIQuC4Bku',
+      pitch: 1.24,
+      text: text,
+    );
+  }
+
+  static Future<({File file, double seconds})> _render({
+    required String voiceId,
+    required double pitch,
+    required String text,
   }) async {
-    final voiceId = voices[characterId] ?? voices['qort']!;
     final response = await http
         .post(
           Uri.parse(
@@ -49,12 +69,12 @@ class StorySentenceVoice {
             'text': text,
             'model_id': 'eleven_multilingual_v2',
             'voice_settings': {
-              'stability': 0.72,
-              'similarity_boost': 0.7,
+              'stability': 0.8,
+              'similarity_boost': 0.62,
               'style': 0.0,
               'use_speaker_boost': false,
             },
-            'speed': 0.9,
+            'speed': 0.84,
           }),
         )
         .timeout(const Duration(seconds: 30));
@@ -63,10 +83,7 @@ class StorySentenceVoice {
       throw Exception('تعذر توليد الصوت');
     }
 
-    final pcm = _childTone(
-      response.bodyBytes,
-      _pitch[characterId] ?? 1.12,
-    );
+    final pcm = _childTone(response.bodyBytes, pitch);
     final dir = await getTemporaryDirectory();
     final file = File(
       '${dir.path}/glow_line_${DateTime.now().microsecondsSinceEpoch}.wav',

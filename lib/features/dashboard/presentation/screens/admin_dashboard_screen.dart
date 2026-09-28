@@ -4,7 +4,6 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/di/injection_container.dart';
 import '../../../../core/theme/app_colors.dart';
-import '../../../content/data/services/database_seeder.dart';
 import '../../../content/presentation/bloc/content_bloc.dart';
 import '../../../content/presentation/bloc/content_event.dart';
 import '../../../content/presentation/bloc/content_state.dart';
@@ -22,63 +21,12 @@ class AdminDashboardScreen extends StatefulWidget {
 
 class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   late ContentBloc _contentBloc;
-  bool _isSeeding = false;
 
   @override
   void initState() {
     super.initState();
     _contentBloc = sl<ContentBloc>();
     _contentBloc.add(const ContentEvent.getWorlds());
-  }
-
-  Future<void> _handleSeedDatabase() async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('تعبئة المحتوى في Supabase'),
-        content: const Text(
-          'سيتم ملء قاعدة البيانات بعوالم خيالية، مهام، قصص تفاعلية كاملة مع شخصيات 3D وأسئلة تحديات.\n\nهل ترغب في المتابعة؟',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('إلغاء'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('ابدأ التعبئة'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirm == true) {
-      setState(() => _isSeeding = true);
-      try {
-        final seeder = DatabaseSeeder(sl());
-        await seeder.seedDatabase();
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('تمت تعبئة البيانات في Supabase بنجاح!'),
-              backgroundColor: Colors.green,
-            ),
-          );
-          _contentBloc.add(const ContentEvent.getWorlds());
-        }
-      } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('خطأ أثناء التعبئة: $e'),
-              backgroundColor: Colors.red,
-            ),
-          );
-        }
-      } finally {
-        if (mounted) setState(() => _isSeeding = false);
-      }
-    }
   }
 
   @override
@@ -96,21 +44,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           title: const Text('إدارة العوالم'),
           centerTitle: false,
           actions: [
-            if (_isSeeding)
-              const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 16),
-                child: SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                ),
-              )
-            else
-              IconButton(
-                icon: const Icon(Icons.auto_fix_high_rounded),
-                tooltip: 'تعبئة بيانات احترافية (Seeder)',
-                onPressed: _handleSeedDatabase,
-              ),
             IconButton(
               icon: const Icon(Icons.more_vert),
               onPressed: () => showLogoutBottomSheet(context),

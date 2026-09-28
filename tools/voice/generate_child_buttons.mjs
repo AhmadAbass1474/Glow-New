@@ -1,7 +1,14 @@
-import { mkdir, writeFile } from 'node:fs/promises';
+import { access, mkdir, readFile, readdir, unlink, writeFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 
-const key = process.env.ELEVENLABS_API_KEY;
+let key = process.env.ELEVENLABS_API_KEY;
+if (!key) {
+  const src = await readFile(
+    new URL('../../lib/core/audio/story_sentence_voice.dart', import.meta.url),
+    'utf8',
+  );
+  key = src.match(/sk_[A-Za-z0-9]+/)?.[0];
+}
 if (!key) {
   console.error('Missing ELEVENLABS_API_KEY');
   process.exit(1);
@@ -12,6 +19,10 @@ const supabaseKey =
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNxdmJic3Ftd2t0eHVhcHdpdm5rIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODkxMzY3NTAsImV4cCI6MjEwNDcxMjc1MH0.w4rUqvb8eXZ77x6nHiDX004jPdctHX7CJLVdVVEaOnI';
 
 const staticPhrases = [
+  'أهلاً بك',
+  'Glow',
+  'رحلة الأبطال',
+  'ابدأ الرحلة',
   'أوسمتي',
   'نسخ الكود',
   'تسجيل الخروج',
@@ -56,10 +67,9 @@ function fileId(phrase) {
 }
 
 function pickVoice() {
-  // Premade "Sarah". The key can synthesize speech but cannot list voices.
-  // Every clip uses this one voice so the tone stays the same.
-  const voiceId = 'EXAVITQu4vr4xnSDxMaL';
-  console.log('voice Sarah', voiceId);
+  // Lily: a soft young voice the free plan can synthesize.
+  const voiceId = 'pFZP5JQG7iQjIQuC4Bku';
+  console.log('voice Lily', voiceId);
   return voiceId;
 }
 
@@ -77,11 +87,12 @@ async function speak(voiceId, phrase) {
         text: phrase,
         model_id: 'eleven_multilingual_v2',
         voice_settings: {
-          stability: 0.62,
-          similarity_boost: 0.8,
+          stability: 0.8,
+          similarity_boost: 0.62,
           style: 0,
-          use_speaker_boost: true,
+          use_speaker_boost: false,
         },
+        speed: 0.84,
       }),
     },
   );
@@ -119,6 +130,15 @@ await mkdir(outDir, { recursive: true });
 const clips = {};
 for (const phrase of unique) {
   const id = fileId(phrase);
+  const fileUrl = new URL(`${id}.mp3`, outDir);
+  try {
+    await access(fileUrl);
+    clips[phrase] = `voice/child/${id}.mp3`;
+    console.log('kept', id, phrase);
+    continue;
+  } catch {
+    // Generate only clips that are not already in the app.
+  }
   let bytes = null;
   for (let attempt = 1; attempt <= 4 && !bytes; attempt += 1) {
     bytes = await speak(voiceId, phrase);
@@ -144,4 +164,8 @@ await writeFile(
   new URL('../../lib/core/audio/child_button_clips.dart', import.meta.url),
   dart,
 );
+const kept = new Set(Object.values(clips).map((asset) => asset.split('/').pop()));
+for (const name of await readdir(outDir).catch(() => [])) {
+  if (name.endsWith('.mp3') && !kept.has(name)) await unlink(new URL(name, outDir));
+}
 console.log('done', unique.length);

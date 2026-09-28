@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/di/injection_container.dart';
+import '../../../../core/widgets/admin_voice_field.dart';
 import '../../../content/domain/entities/world_entity.dart';
 import '../../../content/domain/entities/mission_entity.dart';
 import '../../../content/presentation/bloc/content_bloc.dart';
@@ -93,41 +94,52 @@ class _AddMissionScreenState extends State<AddMissionScreen> {
           builder: (context, state) {
             final isLoading = state.maybeWhen(loading: () => true, orElse: () => false);
 
-            return Padding(
-              padding: const EdgeInsets.all(10.0),
+            return SafeArea(
+              child: Padding(
+              padding: const EdgeInsets.all(16.0),
               child: Form(
                 key: _formKey,
-                child: ListView(
+                child: Column(
                   children: [
-                    TextFormField(
+                    Expanded(
+                      child: ListView(
+                  children: [
+                    AdminVoiceField(
                       controller: _titleController,
-                      decoration: const InputDecoration(hintText: 'اسم المهمة (مثال: المهمة الأولى)'),
+                      hint: 'اسم المهمة (مثال: المهمة الأولى)',
                       validator: (val) => val == null || val.isEmpty ? 'مطلوب' : null,
                     ),
                     const SizedBox(height: 16),
-                    TextFormField(
+                    AdminVoiceField(
                       controller: _badgeController,
-                      decoration: const InputDecoration(hintText: 'اسم الوسم (مثال: وسام الثقة)'),
+                      hint: 'اسم الوسم (مثال: وسام الثقة)',
                       validator: (val) => val == null || val.isEmpty ? 'مطلوب' : null,
                     ),
                     const SizedBox(height: 16),
-                    TextFormField(
+                    AdminVoiceField(
                       controller: _starsController,
+                      hint: 'عدد النجوم (مثال: 50)',
                       keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(hintText: 'عدد النجوم (مثال: 50)'),
                       validator: (val) => val == null || val.isEmpty ? 'مطلوب' : null,
                     ),
-                    const SizedBox(height: 32),
+                  ],
+                    ),
+                    ),
+                    const SizedBox(height: 16),
                     SizedBox(
                       width: double.infinity,
                       child: FilledButton(
                         onPressed: isLoading ? null : _submit,
-                        child: isLoading ? const CircularProgressIndicator() : Text(widget.missionToEdit != null ? 'تحديث المهمة' : 'حفظ المهمة'),
+                        style: FilledButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                        ),
+                        child: isLoading ? const SizedBox(height: 24, width: 24, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) : Text(widget.missionToEdit != null ? 'تحديث المهمة' : 'حفظ المهمة'),
                       ),
                     ),
                   ],
                 ),
               ),
+            ),
             );
           },
         ),

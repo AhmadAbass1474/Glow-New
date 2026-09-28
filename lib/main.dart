@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'core/services/character_asset_cache.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:hive_flutter/hive_flutter.dart';
@@ -9,8 +10,19 @@ import 'core/router/app_router.dart';
 import 'core/theme/app_theme.dart';
 import 'features/auth/presentation/bloc/auth_bloc.dart';
 
+const _whiteNavigationBar = SystemUiOverlayStyle(
+  statusBarColor: Colors.transparent,
+  statusBarIconBrightness: Brightness.dark,
+  statusBarBrightness: Brightness.light,
+  systemNavigationBarColor: Colors.white,
+  systemNavigationBarDividerColor: Colors.white,
+  systemNavigationBarIconBrightness: Brightness.dark,
+  systemNavigationBarContrastEnforced: false,
+);
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  SystemChrome.setSystemUIOverlayStyle(_whiteNavigationBar);
   unawaited(CharacterAssetCache.instance.prewarm());
 
   await Supabase.initialize(
@@ -47,9 +59,12 @@ class GlowApp extends StatelessWidget {
         theme: AppTheme.lightTheme,
         routerConfig: AppRouter.router,
         builder: (context, child) {
-          return Directionality(
-            textDirection: TextDirection.rtl, // For Arabic UI
-            child: child ?? const SizedBox.shrink(),
+          return AnnotatedRegion<SystemUiOverlayStyle>(
+            value: _whiteNavigationBar,
+            child: Directionality(
+              textDirection: TextDirection.rtl, // For Arabic UI
+              child: child ?? const SizedBox.shrink(),
+            ),
           );
         },
       ),

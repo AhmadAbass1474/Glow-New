@@ -1,9 +1,21 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'app_colors.dart';
 
 class AppTheme {
   AppTheme._();
+
+  /// White 3-button navigation bar with dark icons, on every screen.
+  static const SystemUiOverlayStyle overlayStyle = SystemUiOverlayStyle(
+    statusBarColor: Colors.transparent,
+    statusBarIconBrightness: Brightness.dark,
+    statusBarBrightness: Brightness.light,
+    systemNavigationBarColor: Colors.white,
+    systemNavigationBarDividerColor: Colors.white,
+    systemNavigationBarIconBrightness: Brightness.dark,
+    systemNavigationBarContrastEnforced: false,
+  );
 
   static ThemeData get lightTheme {
     return ThemeData(
@@ -28,6 +40,13 @@ class AppTheme {
         onSurface: AppColors.onSurface,
       ),
       scaffoldBackgroundColor: AppColors.background,
+      appBarTheme: const AppBarTheme(
+        backgroundColor: AppColors.surface,
+        foregroundColor: AppColors.onSurface,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        systemOverlayStyle: overlayStyle,
+      ),
       textTheme: GoogleFonts.cairoTextTheme().apply(
         bodyColor: AppColors.onBackground,
         displayColor: AppColors.onBackground,
