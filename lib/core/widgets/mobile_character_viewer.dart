@@ -61,6 +61,7 @@ class _MobileCharacterViewerState extends State<MobileCharacterViewer>
   bool _visible = true, _sending = false;
   String? _error, _lastMessage, _queuedMessage;
   Future<Uint8List>? _modelBytesFuture;
+  String? _shellPath;
   int _generation = 0;
   Duration _lastPosition = Duration.zero;
   final _clock = Stopwatch(), _startup = Stopwatch();
@@ -91,10 +92,11 @@ class _MobileCharacterViewerState extends State<MobileCharacterViewer>
     _booted = _ready = false;
     _lastMessage = _queuedMessage = null;
     try {
-      // Same reliable path on iOS and Android: assets shell + byte inject.
+      final dir = await CharacterOfflinePack.instance.ensureReady();
+      _shellPath = CharacterOfflinePack.instance.htmlFile(dir).path;
       await _bootWebView(
         generation,
-        () => _controller!.loadFlutterAsset(CharacterOfflinePack.htmlAsset),
+        () => _controller!.loadFile(_shellPath!),
       );
     } catch (error) {
       _fail(error, generation);
@@ -169,9 +171,18 @@ class _MobileCharacterViewerState extends State<MobileCharacterViewer>
               : NavigationDecision.prevent;
         },
         onWebResourceError: (error) {
-          if (error.isForMainFrame == true) {
-            _fail(error.description, generation);
-          }
+          if (error.isForMainFrame != true) return;
+          // A missing network must not tear down the local character page.
+          final description = error.description.toLowerCase();
+          final offlineNoise = description.contains('internet') ||
+              description.contains('err_name') ||
+              description.contains('err_connection') ||
+              description.contains('err_address') ||
+              description.contains('err_network') ||
+              description.contains('name_not_resolved') ||
+              description.contains('disconnected');
+          if (offlineNoise) return;
+          _fail(error.description, generation);
         },
       ),
     );

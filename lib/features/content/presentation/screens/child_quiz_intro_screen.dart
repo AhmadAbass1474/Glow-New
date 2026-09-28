@@ -4,10 +4,60 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../core/audio/child_button_voice.dart';
 import '../../domain/entities/mission_entity.dart';
 
-class ChildQuizIntroScreen extends StatelessWidget {
+class ChildQuizIntroScreen extends StatefulWidget {
   final MissionEntity mission;
 
   const ChildQuizIntroScreen({super.key, required this.mission});
+
+  @override
+  State<ChildQuizIntroScreen> createState() => _ChildQuizIntroScreenState();
+}
+
+class _ChildQuizIntroScreenState extends State<ChildQuizIntroScreen> {
+  static const _introLines = [
+    'عمل رائع يا بطل',
+    'لقد أنهيت مشاهد القصة بنجاح',
+    'الآن حان وقت التحدي لإثبات مهارتك وجمع النقاط',
+  ];
+
+  var _opening = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _speakIntro();
+  }
+
+  @override
+  void dispose() {
+    if (!_opening) {
+      ChildButtonVoice.stop();
+    }
+    super.dispose();
+  }
+
+  Future<void> _speakIntro() async {
+    await ChildButtonVoice.playSequence(_introLines);
+  }
+
+  Future<void> _openQuiz() async {
+    if (_opening || !mounted) return;
+    _opening = true;
+    final router = GoRouter.of(context);
+    final mission = widget.mission;
+    await ChildButtonVoice.stop();
+    var moved = false;
+    void go() {
+      if (moved) return;
+      moved = true;
+      router.pushReplacement('/child/quiz', extra: mission);
+    }
+
+    await ChildButtonVoice.press('اختبر نفسك', () async {
+      go();
+    });
+    go();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -19,9 +69,9 @@ class ChildQuizIntroScreen extends StatelessWidget {
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
             colors: [
-              Color(0xFFE0F7FA), // Light Blue
-              Color(0xFFF3E5F5), // Light Purple
-              Color(0xFFFFF3E0), // Light Orange
+              Color(0xFFE0F7FA),
+              Color(0xFFF3E5F5),
+              Color(0xFFFFF3E0),
             ],
           ),
         ),
@@ -32,8 +82,6 @@ class ChildQuizIntroScreen extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 const Spacer(),
-                
-                // Icon / Illustration
                 Container(
                   padding: const EdgeInsets.all(32),
                   decoration: const BoxDecoration(
@@ -46,10 +94,7 @@ class ChildQuizIntroScreen extends StatelessWidget {
                     color: Colors.amber,
                   ),
                 ),
-                
                 const SizedBox(height: 40),
-                
-                // Title
                 const Text(
                   'عمل رائع يا بطل! 🌟',
                   style: TextStyle(
@@ -59,10 +104,7 @@ class ChildQuizIntroScreen extends StatelessWidget {
                   ),
                   textAlign: TextAlign.center,
                 ),
-                
                 const SizedBox(height: 16),
-                
-                // Subtitle
                 const Text(
                   'لقد أنهيت مشاهد القصة بنجاح.\nالآن حان وقت التحدي لإثبات مهارتك وجمع النقاط!',
                   style: TextStyle(
@@ -73,20 +115,12 @@ class ChildQuizIntroScreen extends StatelessWidget {
                   ),
                   textAlign: TextAlign.center,
                 ),
-                
                 const Spacer(),
-                
-                // Start Quiz Button
                 SizedBox(
                   width: double.infinity,
                   height: 56,
                   child: FilledButton.icon(
-                    onPressed: () {
-                      ChildButtonVoice.press('اختبر نفسك', () async {
-                        if (!context.mounted) return;
-                        context.pushReplacement('/child/quiz', extra: mission);
-                      }, single: true);
-                    },
+                    onPressed: _openQuiz,
                     icon: const Icon(Icons.rocket_launch_rounded, size: 24),
                     label: const Text(
                       'اختبر نفسك',

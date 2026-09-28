@@ -70,17 +70,17 @@ class CharacterOfflinePack {
       htmlFileName: await _assetLength(htmlAsset),
       jsFileName: await _assetLength(jsAsset),
       modelFileName: await _assetLength(modelAsset),
+      // Bumps the stamp when the shell is rewritten as one offline file.
+      'inlineScript': 1,
     };
     final stampFile = File('${dir.path}/$stampFileName');
     if (await _stampMatches(stampFile, planned) &&
         await htmlFile(dir).exists() &&
-        await File('${dir.path}/$jsFileName').exists() &&
         await modelFile(dir).exists()) {
       return dir;
     }
 
-    await _copyAsset(htmlAsset, htmlFile(dir));
-    await _copyAsset(jsAsset, File('${dir.path}/$jsFileName'));
+    await _writeOfflineShell(htmlFile(dir));
     await _copyAsset(modelAsset, modelFile(dir));
     await stampFile.writeAsString(jsonEncode(planned), flush: true);
     return dir;
@@ -103,6 +103,34 @@ class CharacterOfflinePack {
     } catch (_) {
       return false;
     }
+  }
+
+  /// One HTML file with the viewer script inside it, so the WebView never
+  /// requests a second file or the network.
+  Future<void> _writeOfflineShell(File destination) async {
+    final html = await _assetText(htmlAsset);
+    final script = (await _assetText(jsAsset)).replaceAll(
+      '</script',
+      '<\\/script',
+    );
+    final shell = html
+        .replaceFirst("script-src 'self'", "script-src 'unsafe-inline'")
+        .replaceFirst(
+          '<script src="character_mobile.js"></script>',
+          '<script>$script</script>',
+        );
+    if (shell.contains('src="character_mobile.js"')) {
+      throw StateError('Character shell script was not inlined');
+    }
+    await destination.writeAsString(shell, flush: true);
+  }
+
+  Future<String> _assetText(String assetPath) async {
+    final data = await _bundle.load(assetPath);
+    return utf8.decode(data.buffer.asUint8List(
+      data.offsetInBytes,
+      data.lengthInBytes,
+    ));
   }
 
   Future<void> _copyAsset(String assetPath, File destination) async {

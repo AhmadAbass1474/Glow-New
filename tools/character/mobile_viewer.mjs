@@ -428,7 +428,16 @@ try {
   addEventListener('resize', resize);
   document.addEventListener('visibilitychange', () => { last = 0; if (document.hidden) { cancelAnimationFrame(frame); frame = 0; } else schedule(); });
   addEventListener('pagehide', dispose);
-  addEventListener('error', event => fail(event.error ?? event.message));
-  addEventListener('unhandledrejection', event => fail(event.reason));
+  addEventListener('error', event => {
+    if (event.target && event.target !== window) return;
+    const message = String(event.error?.message ?? event.message ?? '');
+    if (/failed to fetch|networkerror|internet disconnected|err_internet/i.test(message)) return;
+    fail(event.error ?? event.message);
+  });
+  addEventListener('unhandledrejection', event => {
+    const message = String(event.reason?.message ?? event.reason ?? '');
+    if (/failed to fetch|networkerror|internet disconnected|err_internet/i.test(message)) return;
+    fail(event.reason);
+  });
   send('boot');
 } catch (error) { fail(error); }

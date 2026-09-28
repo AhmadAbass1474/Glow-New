@@ -24,22 +24,25 @@ class ChildButtonVoice {
   static var _busy = false;
   static var _contextReady = false;
   static var _playerReady = false;
-  static var _singleUntil = DateTime.fromMillisecondsSinceEpoch(0);
+  static String? _queuedPhrase;
+  static Future<void> Function()? _queuedAction;
   static final _durations = <String, Duration>{};
 
-  /// [single] ignores another tap until this clip finishes and the screen moves.
-  static Future<void> press(
+  /// Plays [phrase], then runs [action].
+  /// A tap while another clip is playing is kept and runs after it,
+  /// so a button is never ignored.
+  /// Returns false when the tap was only queued.
+  static Future<bool> press(
     String phrase,
     Future<void> Function() action, {
     bool single = false,
   }) async {
-    if (_busy) return;
-    final now = DateTime.now();
-    if (single && now.isBefore(_singleUntil)) return;
-    _busy = true;
-    if (single) {
-      _singleUntil = now.add(const Duration(milliseconds: 450));
+    if (_busy) {
+      _queuedPhrase = phrase;
+      _queuedAction = action;
+      return false;
     }
+    _busy = true;
 
     try {
       await _playLocal(phrase.trim()).timeout(const Duration(seconds: 12));
@@ -50,6 +53,26 @@ class ChildButtonVoice {
     finally {
       _busy = false;
     }
+
+    final nextPhrase = _queuedPhrase;
+    final nextAction = _queuedAction;
+    _queuedPhrase = null;
+    _queuedAction = null;
+    if (nextPhrase != null && nextAction != null) {
+      await press(nextPhrase, nextAction, single: single);
+    }
+    return true;
+  }
+
+  /// Stops whatever is playing so a closed screen does not keep talking.
+  static Future<void> stop() async {
+    ++_playId;
+    _queuedPhrase = null;
+    _queuedAction = null;
+    speaking.value = false;
+    try {
+      await _player.stop();
+    } catch (_) {}
   }
 
   /// Plays bundled clips one after another. A later [press] stops the sequence.
@@ -134,6 +157,10 @@ class ChildButtonVoice {
     int id,
     String cacheKey,
   ) async {
+    try {
+      await _player.stop().timeout(const Duration(milliseconds: 300));
+    } catch (_) {}
+    if (id != _playId) return;
     await _player.play(source).timeout(const Duration(seconds: 2));
     if (id != _playId) return;
     var duration = _durations[cacheKey];
@@ -142,15 +169,27 @@ class ChildButtonVoice {
         duration = await _player
             .getDuration()
             .timeout(const Duration(milliseconds: 400));
-        if (duration != null && duration > Duration.zero) {
+        if (duration != null &&
+            duration > Duration.zero &&
+            duration < const Duration(seconds: 20)) {
           _durations[cacheKey] = duration;
+        } else {
+          duration = null;
         }
       } catch (_) {}
     }
     final wait = duration == null || duration <= Duration.zero
         ? const Duration(milliseconds: 900)
         : duration;
-    await Future<void>.delayed(wait);
+    final end = DateTime.now().add(wait);
+    while (id == _playId && DateTime.now().isBefore(end)) {
+      final left = end.difference(DateTime.now());
+      final step = left < const Duration(milliseconds: 120)
+          ? left
+          : const Duration(milliseconds: 120);
+      if (step <= Duration.zero) break;
+      await Future<void>.delayed(step);
+    }
   }
 
   static String _sourceKey(Source source) {
