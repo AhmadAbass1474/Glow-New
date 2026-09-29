@@ -63,6 +63,7 @@ class _AddStoryScreenState extends State<AddStoryScreen> {
   final _formKey = GlobalKey<FormState>();
   final _titleController = TextEditingController();
   final _contentController = TextEditingController();
+  final _scriptController = TextEditingController();
 
   File? _audioFile;
   StoryTimeline? _timeline;
@@ -73,6 +74,7 @@ class _AddStoryScreenState extends State<AddStoryScreen> {
   bool _isPlaying = false;
   int _step = 0;
   bool _joining = false;
+  bool _scriptBusy = false;
   bool _preparingEdit = false;
   bool _audioRebuilt = false;
   String? _sceneSignature;
@@ -86,6 +88,9 @@ class _AddStoryScreenState extends State<AddStoryScreen> {
   void initState() {
     super.initState();
     _contentBloc = sl<ContentBloc>();
+    _scriptController.addListener(() {
+      if (mounted) setState(() {});
+    });
     final story = widget.storyToEdit;
     if (story == null) return;
     _titleController.text = story.title;
@@ -96,6 +101,7 @@ class _AddStoryScreenState extends State<AddStoryScreen> {
       } catch (_) {}
     }
     _hydrateLines(story);
+    _scriptController.text = _scriptFromLines(_lines);
     final url = story.audioUrl?.trim() ?? '';
     if (url.isNotEmpty) {
       _preparingEdit = true;
@@ -220,6 +226,7 @@ class _AddStoryScreenState extends State<AddStoryScreen> {
   void dispose() {
     _titleController.dispose();
     _contentController.dispose();
+    _scriptController.dispose();
     for (final line in _lines) {
       line.dispose();
     }
@@ -270,6 +277,186 @@ class _AddStoryScreenState extends State<AddStoryScreen> {
       await _audioPlayer!.pause();
     } else {
       await _audioPlayer!.resume();
+    }
+  }
+
+  String _scriptFromLines(List<_SentenceLine> lines) {
+    return lines
+        .where((line) => line.controller.text.trim().isNotEmpty)
+        .map((line) => '${line.controller.text.trim()} /${_characterName(line.characterId)}')
+        .join('\n');
+  }
+
+  String _characterName(String characterId) {
+    for (final character in _sceneCharacters) {
+      if (character.$1 == characterId) return character.$2;
+    }
+    return 'كورت';
+  }
+
+  String? _characterId(String name) {
+    final cleaned = name.trim();
+    for (final character in _sceneCharacters) {
+      if (character.$2 == cleaned || character.$1 == cleaned) return character.$1;
+    }
+    return null;
+  }
+
+  List<({String text, String characterId})>? _parseScript(String raw) {
+    final pieces = <({String text, String characterId})>[];
+    final pattern = RegExp(r'([^/\n]+?)\s*/\s*(\S+)');
+    final lines = raw.split('\n');
+    for (var index = 0; index < lines.length; index++) {
+      final line = lines[index].trim();
+      if (line.isEmpty) continue;
+      final matches = pattern.allMatches(line).toList();
+      if (matches.isEmpty) {
+        _scriptError('السطر ${index + 1} يحتاج / واسم الشخصية في آخره');
+        return null;
+      }
+      var consumed = 0;
+      for (final match in matches) {
+        final spoken = match.group(1)!.trim();
+        final name = match.group(2)!.replaceAll(RegExp(r'[.،,!！?؟:]+$'), '');
+        final characterId = _characterId(name);
+        if (spoken.isEmpty || characterId == null) {
+          _scriptError('السطر ${index + 1}: الشخصية «$name» غير معروفة');
+          return null;
+        }
+        pieces.add((text: spoken, characterId: characterId));
+        consumed = match.end;
+      }
+      if (line.substring(consumed).trim().isNotEmpty) {
+        _scriptError('السطر ${index + 1} فيه كلام بعد اسم الشخصية');
+        return null;
+      }
+    }
+    if (pieces.isEmpty) {
+      _scriptError('اكتب جملة واحدة على الأقل في الوصف');
+      return null;
+    }
+    return pieces;
+  }
+
+  void _scriptError(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  _SentenceLine _makeLine(String text, String characterId) {
+    final line = _SentenceLine();
+    line.controller.text = text;
+    line.characterId = characterId;
+    line.controller.addListener(() {
+      if (mounted) setState(() {});
+    });
+    return line;
+  }
+
+  bool get _scriptReady {
+    final pieces = _parseScriptQuiet(_scriptController.text);
+    if (pieces == null) return false;
+    final ready = _lines.where((line) => line.controller.text.trim().isNotEmpty).toList();
+    if (ready.length != pieces.length) return false;
+    for (var index = 0; index < pieces.length; index++) {
+      final line = ready[index];
+      final piece = pieces[index];
+      if (line.audio == null || line.spokenText != piece.text || line.characterId != piece.characterId) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  List<({String text, String characterId})>? _parseScriptQuiet(String raw) {
+    final pieces = <({String text, String characterId})>[];
+    final pattern = RegExp(r'([^/\n]+?)\s*/\s*(\S+)');
+    for (final rawLine in raw.split('\n')) {
+      final line = rawLine.trim();
+      if (line.isEmpty) continue;
+      final matches = pattern.allMatches(line).toList();
+      if (matches.isEmpty) return null;
+      var consumed = 0;
+      for (final match in matches) {
+        final spoken = match.group(1)!.trim();
+        final name = match.group(2)!.replaceAll(RegExp(r'[.،,!！?؟:]+$'), '');
+        final characterId = _characterId(name);
+        if (spoken.isEmpty || characterId == null) return null;
+        pieces.add((text: spoken, characterId: characterId));
+        consumed = match.end;
+      }
+      if (line.substring(consumed).trim().isNotEmpty) return null;
+    }
+    if (pieces.isEmpty) return null;
+    return pieces;
+  }
+
+  Future<void> _speakScript() async {
+    if (_scriptBusy) return;
+    final pieces = _parseScript(_scriptController.text);
+    if (pieces == null) return;
+    final ready = _lines.where((line) => line.controller.text.trim().isNotEmpty).toList();
+    final same = ready.length == pieces.length &&
+        List.generate(pieces.length, (index) {
+          final line = ready[index];
+          return line.audio != null &&
+              line.spokenText == pieces[index].text &&
+              line.characterId == pieces[index].characterId;
+        }).every((matches) => matches);
+    if (same) {
+      await _playLines(ready);
+      return;
+    }
+
+    setState(() => _scriptBusy = true);
+    final next = <_SentenceLine>[];
+    try {
+      for (final piece in pieces) {
+        final clip = await StorySentenceVoice.speak(
+          characterId: piece.characterId,
+          text: piece.text,
+        );
+        final line = _makeLine(piece.text, piece.characterId);
+        line.audio = clip.file;
+        line.seconds = clip.seconds;
+        line.spokenText = piece.text;
+        next.add(line);
+      }
+      if (!mounted) {
+        for (final line in next) {
+          line.dispose();
+        }
+        return;
+      }
+      final previous = List<_SentenceLine>.of(_lines);
+      setState(() {
+        _lines
+          ..clear()
+          ..addAll(next);
+        _scriptBusy = false;
+      });
+      for (final line in previous) {
+        line.dispose();
+      }
+      next.clear();
+      await _playLines(_lines);
+    } catch (_) {
+      for (final line in next) {
+        line.dispose();
+      }
+      if (!mounted) return;
+      setState(() => _scriptBusy = false);
+      _scriptError('تعذر توليد صوت الوصف. حاول مرة أخرى.');
+    }
+  }
+
+  Future<void> _playLines(List<_SentenceLine> lines) async {
+    _linePlayer ??= AudioPlayer();
+    for (final line in lines) {
+      final file = line.audio;
+      if (file == null || !mounted) return;
+      await _linePlayer!.stop();
+      await _linePlayer!.play(DeviceFileSource(file.path));
+      await _linePlayer!.onPlayerComplete.first;
     }
   }
 
@@ -547,6 +734,7 @@ class _AddStoryScreenState extends State<AddStoryScreen> {
           },
           builder: (context, state) {
             final isLoading = _joining ||
+                _scriptBusy ||
                 _preparingEdit ||
                 state.maybeWhen(
                   loading: () => true,
@@ -579,6 +767,37 @@ class _AddStoryScreenState extends State<AddStoryScreen> {
                                           onPressed: _addLine,
                                           icon: const Icon(Icons.add),
                                           tooltip: 'إضافة جملة',
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 16),
+                                    Row(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Expanded(
+                                          child: TextFormField(
+                                            controller: _scriptController,
+                                            minLines: 4,
+                                            maxLines: 8,
+                                            decoration: const InputDecoration(
+                                              hintText: 'الوصف. كل جملة تنتهي بـ /لورت أو /بورت',
+                                              alignLabelWithHint: true,
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        FilledButton.tonal(
+                                          onPressed: _scriptBusy ? null : _speakScript,
+                                          style: FilledButton.styleFrom(
+                                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+                                          ),
+                                          child: _scriptBusy
+                                              ? const SizedBox(
+                                                  width: 18,
+                                                  height: 18,
+                                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                                )
+                                              : Text(_scriptReady ? 'اسمع' : 'اعمل الصوت'),
                                         ),
                                       ],
                                     ),
