@@ -15,6 +15,7 @@ import '../../../auth/data/datasources/auth_local_data_source.dart';
 import '../../domain/repositories/content_repository.dart';
 import '../../../../core/widgets/shimmer_loading.dart';
 import '../../../../core/audio/child_button_voice.dart';
+import '../../../dashboard/data/child_activity.dart';
 import '../../../../core/services/character_asset_cache.dart';
 
 class ChildWorldMissionsScreen extends StatefulWidget {
@@ -157,6 +158,12 @@ class _ChildWorldMissionsScreenState extends State<ChildWorldMissionsScreen> {
                             onTap: isUnlocked ? () {
                               HapticFeedback.lightImpact();
                               ChildButtonVoice.press(mission.title, () async {
+                                if (!context.mounted) return;
+                                await sl<ChildActivityLogger>().openedMission(
+                                  missionId: mission.id,
+                                  title: mission.title,
+                                  world: widget.world.title,
+                                );
                                 if (!context.mounted) return;
                                 await context.push('/child/story-viewer', extra: mission);
                                 if (mounted) {

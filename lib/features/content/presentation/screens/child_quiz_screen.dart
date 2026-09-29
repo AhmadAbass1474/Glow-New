@@ -11,6 +11,8 @@ import '../bloc/content_state.dart';
 import '../../../auth/data/datasources/auth_local_data_source.dart';
 import '../../../../core/widgets/shimmer_loading.dart';
 import '../../../../core/audio/child_button_voice.dart';
+import '../../../dashboard/data/child_activity.dart';
+import '../../domain/entities/question_entity.dart';
 
 class ChildQuizScreen extends StatefulWidget {
   final MissionEntity mission;
@@ -31,6 +33,10 @@ class _ChildQuizScreenState extends State<ChildQuizScreen> {
     super.initState();
     _contentBloc = sl<ContentBloc>();
     _contentBloc.add(ContentEvent.getQuestions(widget.mission.id));
+    sl<ChildActivityLogger>().startedQuiz(
+      missionId: widget.mission.id,
+      title: widget.mission.title,
+    );
   }
 
   @override
@@ -39,10 +45,26 @@ class _ChildQuizScreenState extends State<ChildQuizScreen> {
     super.dispose();
   }
 
-  void _submitAnswer(int correctIndex, int totalQuestions) {
-    if (_selectedIndex == null) return;
-    
-    if (_selectedIndex == correctIndex) {
+  void _submitAnswer(QuestionEntity question, int totalQuestions) {
+    final selected = _selectedIndex;
+    if (selected == null) return;
+    final options = question.options;
+    final chosen = selected < options.length ? options[selected] : '';
+    final correctIndex = question.correctAnswerIndex;
+    final correct = correctIndex >= 0 && correctIndex < options.length
+        ? options[correctIndex]
+        : '';
+    final isCorrect = selected == correctIndex;
+    sl<ChildActivityLogger>().answered(
+      missionId: widget.mission.id,
+      missionTitle: widget.mission.title,
+      question: question.questionText,
+      chosen: chosen,
+      correct: correct,
+      isCorrect: isCorrect,
+    );
+
+    if (isCorrect) {
       // Show Success Snack
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -63,6 +85,12 @@ class _ChildQuizScreenState extends State<ChildQuizScreen> {
               _selectedIndex = null;
             });
           } else {
+            sl<ChildActivityLogger>().finishedMission(
+              missionId: widget.mission.id,
+              title: widget.mission.title,
+              badgeName: widget.mission.badgeName,
+              stars: widget.mission.starsReward,
+            );
             sl<AuthLocalDataSource>().getLastChild().then((cachedChild) {
               final childId = cachedChild?.id ?? Supabase.instance.client.auth.currentUser?.id;
               if (childId != null) {
@@ -293,7 +321,7 @@ class _ChildQuizScreenState extends State<ChildQuizScreen> {
                         child: FilledButton.icon(
                           onPressed: _selectedIndex == null ? null : () {
                             ChildButtonVoice.press('إرسال الإجابة', () async {
-                              _submitAnswer(currentQ.correctAnswerIndex, questions.length);
+                              _submitAnswer(currentQ, questions.length);
                             }, single: true);
                           },
                           icon: const Icon(Icons.check_circle_rounded),

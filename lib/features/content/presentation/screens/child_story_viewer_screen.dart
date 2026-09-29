@@ -14,6 +14,7 @@ import '../bloc/content_bloc.dart';
 import '../bloc/content_event.dart';
 import '../bloc/content_state.dart';
 import '../../../../core/di/injection_container.dart';
+import '../../../dashboard/data/child_activity.dart';
 import '../../../../core/utils/character_helper.dart';
 import '../../../../core/widgets/shimmer_loading.dart';
 import 'dart:convert';
@@ -544,12 +545,22 @@ class _ChildStoryViewerScreenState extends State<ChildStoryViewerScreen>
     _startStory();
   }
 
+  void _logStory(StoryEntity story) {
+    sl<ChildActivityLogger>().watchedStory(
+      missionId: widget.mission.id,
+      missionTitle: widget.mission.title,
+      storyTitle: story.title,
+      content: story.content,
+    );
+  }
+
   void _nextStory() {
     if (!mounted || _leaving) return;
     if (_currentIndex < _stories.length - 1) {
       setState(() {
         _currentIndex++;
       });
+      _logStory(_stories[_currentIndex]);
       _startStory();
     } else {
       // Finished all stories
@@ -629,6 +640,7 @@ class _ChildStoryViewerScreenState extends State<ChildStoryViewerScreen>
                         _stories = stories;
                         _currentIndex = 0;
                       });
+                      _logStory(stories.first);
                       _startStory();
                     }
                   },
@@ -638,16 +650,16 @@ class _ChildStoryViewerScreenState extends State<ChildStoryViewerScreen>
               builder: (context, state) {
                 return state.maybeWhen(
                   loading: () => const ShimmerLoading(type: ShimmerType.card),
-                  error: (msg) => Center(
-                    child: Text(
+                  error: (msg) => _messageWithBack(
+                    Text(
                       'خطأ: $msg',
                       style: const TextStyle(color: Colors.red),
                     ),
                   ),
                   storiesLoaded: (stories) {
                     if (stories.isEmpty) {
-                      return const Center(
-                        child: Text(
+                      return _messageWithBack(
+                        const Text(
                           'لا توجد قصص في هذه المهمة بعد.',
                           style: TextStyle(fontSize: 14, color: Colors.grey),
                         ),
@@ -790,46 +802,6 @@ class _ChildStoryViewerScreenState extends State<ChildStoryViewerScreen>
 
                         const SizedBox(height: 8),
 
-                        // Subtitles (Outside, Top)
-                        if (story.content.trim().isNotEmpty)
-                          Container(
-                            margin: const EdgeInsets.symmetric(horizontal: 16),
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 12,
-                            ),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              border: Border.all(
-                                color: AppColors.inputBorder,
-                                width: 1.5,
-                              ),
-                              borderRadius: BorderRadius.circular(
-                                AppColors.border_radius,
-                              ),
-                            ),
-                            width: double.infinity,
-                            child: ConstrainedBox(
-                              constraints: const BoxConstraints(maxHeight: 80),
-                              child: SingleChildScrollView(
-                                child: Text(
-                                  story.content,
-                                  style: const TextStyle(
-                                    color: AppColors.secondary,
-                                    fontSize: 16,
-                                    height: 1.5,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                  textAlign: TextAlign.center,
-                                  textDirection: TextDirection.rtl,
-                                ),
-                              ),
-                            ),
-                          ),
-
-                        if (story.content.trim().isNotEmpty)
-                          const SizedBox(height: 8),
-
                         // Interactive Tap Areas & 3D Character
                         Expanded(
                           child: Builder(
@@ -885,15 +857,6 @@ class _ChildStoryViewerScreenState extends State<ChildStoryViewerScreen>
                                           color: AppColors.inputBorder,
                                           width: 1.5,
                                         ),
-                                        boxShadow: [
-                                          BoxShadow(
-                                            color: CharacterHelper.getColor(
-                                              activeChar,
-                                            ).withValues(alpha: 0.2),
-                                            blurRadius: 10,
-                                            offset: const Offset(0, 5),
-                                          ),
-                                        ],
                                       ),
                                       child: ClipRRect(
                                         borderRadius: BorderRadius.circular(
@@ -957,79 +920,17 @@ class _ChildStoryViewerScreenState extends State<ChildStoryViewerScreen>
                                               ),
                                             ),
 
-                                            // Previous Button (Right Side)
-                                            Positioned(
-                                              right: 0,
-                                              top: 0,
-                                              bottom: 0,
-                                              width: 50,
-                                              child: GestureDetector(
-                                                onTap: _currentIndex > 0
-                                                    ? () {
-                                                        ChildButtonVoice.press('السابق', () async {
-                                                          _previousStory();
-                                                        }, single: true);
-                                                      }
-                                                    : null,
-                                                child: Container(
-                                                  decoration: BoxDecoration(
-                                                    gradient: LinearGradient(
-                                                      begin: Alignment.centerRight,
-                                                      end: Alignment.centerLeft,
-                                                      colors: [
-                                                        CharacterHelper.getColor(activeChar).withValues(alpha: 0.5),
-                                                        CharacterHelper.getColor(activeChar).withValues(alpha: 0.0),
-                                                      ],
-                                                    ),
-                                                  ),
-                                                  child: Center(
-                                                    child: _currentIndex > 0 
-                                                        ? const Icon(
-                                                            Icons.chevron_left,
-                                                            color: Colors.black,
-                                                            size: 40,
-                                                          )
-                                                        : const SizedBox(),
-                                                  ),
+                                            if (story.content.trim().isNotEmpty)
+                                              Positioned(
+                                                left: 10,
+                                                right: 10,
+                                                bottom: 10,
+                                                child: _SpeechCaption(
+                                                  text: story.content,
+                                                  position: _positionNotifier,
+                                                  duration: _totalDuration,
                                                 ),
                                               ),
-                                            ),
-
-                                            // Next Button (Left Side)
-                                            Positioned(
-                                              left: 0,
-                                              top: 0,
-                                              bottom: 0,
-                                              width: 50,
-                                              child: GestureDetector(
-                                                onTap: () {
-                                                  ChildButtonVoice.press('التالي', () async {
-                                                    _nextStory();
-                                                  }, single: true);
-                                                },
-                                                child: Container(
-                                                  decoration: BoxDecoration(
-                                                    gradient: LinearGradient(
-                                                      begin: Alignment.centerLeft,
-                                                      end: Alignment.centerRight,
-                                                      colors: [
-                                                        CharacterHelper.getColor(activeChar).withValues(alpha: 0.5),
-                                                        CharacterHelper.getColor(activeChar).withValues(alpha: 0.0),
-                                                      ],
-                                                    ),
-                                                  ),
-                                                  child: const Center(
-                                                    child: Icon(
-                                                      Icons.chevron_right,
-                                                      color: Colors.black,
-                                                      size: 40,
-                                                    ),
-                                                  ),
-                                                ),
-                                              ),
-                                            ),
-
-
 
                                           ],
                                         ),
@@ -1062,11 +963,7 @@ class _ChildStoryViewerScreenState extends State<ChildStoryViewerScreen>
                                             color: AppColors.secondary,
                                             size: 28,
                                           ),
-                                          onPressed: () {
-                                            ChildButtonVoice.press('إعادة', () async {
-                                              _restartMission();
-                                            }, single: true);
-                                          },
+                                          onPressed: _restartMission,
                                         ),
                                         const SizedBox(width: 24),
                                         // Play/Pause Button
@@ -1082,12 +979,7 @@ class _ChildStoryViewerScreenState extends State<ChildStoryViewerScreen>
                                             color: AppColors.secondary,
                                             size: 32,
                                           ),
-                                          onPressed: () {
-                                            final playing = (_audioPlayer != null && !_hasAudio ? _playRequested : _isPlaying);
-                                            ChildButtonVoice.press(playing ? 'إيقاف' : 'تشغيل', () async {
-                                              _togglePlayPause();
-                                            });
-                                          },
+                                          onPressed: _togglePlayPause,
                                         ),
                                         const SizedBox(width: 24),
                                         // Mute Button
@@ -1101,11 +993,7 @@ class _ChildStoryViewerScreenState extends State<ChildStoryViewerScreen>
                                               color: AppColors.secondary,
                                               size: 28,
                                             ),
-                                            onPressed: () {
-                                              ChildButtonVoice.press(_isMuted ? 'تشغيل الصوت' : 'كتم الصوت', () async {
-                                                _toggleMute();
-                                              });
-                                            },
+                                            onPressed: _toggleMute,
                                           )
                                         else
                                           const SizedBox(width: 44),
@@ -1123,14 +1011,7 @@ class _ChildStoryViewerScreenState extends State<ChildStoryViewerScreen>
                                       width: double.infinity,
                                       height: 56,
                                       child: FilledButton(
-                                        onPressed: () {
-                                          final label = _currentIndex < _stories.length - 1
-                                              ? 'متابعة المشهد'
-                                              : 'إنهاء القصة والتحدي';
-                                          ChildButtonVoice.press(label, () async {
-                                            _nextStory();
-                                          }, single: true);
-                                        },
+                                        onPressed: _nextStory,
                                         style: FilledButton.styleFrom(
                                           backgroundColor:
                                               CharacterHelper.getColor(
@@ -1170,6 +1051,52 @@ class _ChildStoryViewerScreenState extends State<ChildStoryViewerScreen>
           ),
         ),
       ),
+    );
+  }
+
+  Widget _messageWithBack(Widget message) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Align(
+          alignment: AlignmentDirectional.centerStart,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+            child: GestureDetector(
+              onTap: () {
+                ChildButtonVoice.press('رجوع', () async {
+                  _stopPlayback();
+                  if (!mounted) return;
+                  context.pop();
+                }, single: true);
+              },
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(AppColors.border_radius),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.05),
+                      blurRadius: 4,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: const Text(
+                  'رجوع',
+                  style: TextStyle(
+                    color: Color(0xFF2C3E50),
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+        Expanded(child: Center(child: message)),
+      ],
     );
   }
 
@@ -1219,6 +1146,104 @@ class _ChildStoryViewerScreenState extends State<ChildStoryViewerScreen>
           ),
         );
       },
+    );
+  }
+}
+
+/// Fixed caption inside the player. Scroll follows speech position and
+/// ignores most audio ticks so the 3D view is not rebuilt.
+class _SpeechCaption extends StatefulWidget {
+  const _SpeechCaption({
+    required this.text,
+    required this.position,
+    required this.duration,
+  });
+
+  final String text;
+  final ValueNotifier<Duration> position;
+  final Duration duration;
+
+  @override
+  State<_SpeechCaption> createState() => _SpeechCaptionState();
+}
+
+class _SpeechCaptionState extends State<_SpeechCaption> {
+  final ScrollController _scroll = ScrollController();
+  var _lastStep = -1;
+  var _followAt = 0;
+
+  static const _style = TextStyle(
+    color: AppColors.secondary,
+    fontSize: 16,
+    height: 1.5,
+    fontWeight: FontWeight.bold,
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    widget.position.addListener(_followSpeech);
+  }
+
+  @override
+  void didUpdateWidget(covariant _SpeechCaption oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.position != widget.position) {
+      oldWidget.position.removeListener(_followSpeech);
+      widget.position.addListener(_followSpeech);
+    }
+    if (oldWidget.text != widget.text) {
+      _lastStep = -1;
+      if (_scroll.hasClients) _scroll.jumpTo(0);
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.position.removeListener(_followSpeech);
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  void _followSpeech() {
+    if (!_scroll.hasClients) return;
+    final total = widget.duration.inMilliseconds;
+    final max = _scroll.position.maxScrollExtent;
+    if (total <= 0 || max <= 0) return;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    if (now < _followAt) return;
+    final progress = (widget.position.value.inMilliseconds / total).clamp(0.0, 1.0);
+    final step = (progress * 24).floor();
+    if (step == _lastStep) return;
+    _lastStep = step;
+    _followAt = now + 200;
+    final target = max * progress;
+    if ((_scroll.offset - target).abs() < 6) return;
+    _scroll.jumpTo(target);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return RepaintBoundary(
+      child: Container(
+        height: 88,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          border: Border.all(color: AppColors.inputBorder, width: 1.5),
+          borderRadius: BorderRadius.circular(AppColors.border_radius),
+        ),
+        child: SingleChildScrollView(
+          controller: _scroll,
+          physics: const ClampingScrollPhysics(),
+          child: Text(
+            widget.text,
+            style: _style,
+            textAlign: TextAlign.center,
+            textDirection: TextDirection.rtl,
+          ),
+        ),
+      ),
     );
   }
 }

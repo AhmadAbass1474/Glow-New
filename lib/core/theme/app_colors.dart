@@ -27,6 +27,7 @@ class AppColors {
   // Error Colors (Soft Red)
   static const Color error = Color(0xFFEA4335);
   static const Color onError = Colors.white;
+  static const Color burgundy = Color(0xFF6B1A2A);
 
   // Background and Surface
   static const Color background = Color(0xFFF8FAFC); // Very light blue/grey

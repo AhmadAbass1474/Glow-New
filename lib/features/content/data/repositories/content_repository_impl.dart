@@ -302,7 +302,13 @@ class ContentRepositoryImpl implements ContentRepository {
     if (await networkInfo.isConnected) {
       // Background sync
       remoteDataSource.getCompletedMissions(childId).then((progressList) async {
-        await localDataSource.cacheChildProgress(childId, progressList);
+        final local = await localDataSource.getCachedChildProgress(childId);
+        final remoteIds = progressList.map((item) => item.missionId).toSet();
+        final kept = local.where((item) => !remoteIds.contains(item.missionId));
+        await localDataSource.cacheChildProgress(childId, [
+          ...progressList,
+          ...kept,
+        ]);
       }).catchError((_) {});
 
       if (cachedProgress.isNotEmpty) {

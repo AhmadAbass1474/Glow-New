@@ -15,13 +15,11 @@ class ParentAuthScreen extends StatefulWidget {
 class _ParentAuthScreenState extends State<ParentAuthScreen> {
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
-  final TextEditingController _childCodeController = TextEditingController();
 
   @override
   void dispose() {
     _emailController.dispose();
     _passwordController.dispose();
-    _childCodeController.dispose();
     super.dispose();
   }
 
@@ -76,24 +74,15 @@ class _ParentAuthScreenState extends State<ParentAuthScreen> {
                   ),
                   obscureText: true,
                 ),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: _childCodeController,
-                  decoration: const InputDecoration(
-                    hintText: 'كود الطفل التعريفي (CH-XXXX)',
-                    prefixIcon: Icon(Icons.code),
-                  ),
-                ),
                 const SizedBox(height: 32),
                 FilledButton(
                   onPressed: isLoading ? null : () {
                     final email = _emailController.text.trim();
                     final password = _passwordController.text.trim();
-                    final childCode = _childCodeController.text.trim();
 
-                    if (email.isEmpty || password.isEmpty || childCode.isEmpty) {
+                    if (email.isEmpty || password.isEmpty) {
                       ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('الرجاء تعبئة جميع الحقول')),
+                        const SnackBar(content: Text('الرجاء تعبئة البريد وكلمة المرور')),
                       );
                       return;
                     }
@@ -101,7 +90,7 @@ class _ParentAuthScreenState extends State<ParentAuthScreen> {
                     context.read<AuthBloc>().add(AuthEvent.registerParent(
                       email: email,
                       password: password,
-                      childCode: childCode,
+                      childCode: '',
                     ));
                   },
                   style: FilledButton.styleFrom(

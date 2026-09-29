@@ -40,10 +40,21 @@ class DeviceIdHelper {
   }
 
   static String generateDeviceEmail(String deviceId) {
-    return '$deviceId@glow.app';
+    return emailFor(deviceId, '');
   }
 
   static String generateDevicePassword(String deviceId) {
-    return '${deviceId}_secret_glow_2026';
+    return passwordFor(deviceId, '');
+  }
+
+  /// Empty [slot] is the first child on this phone. Later children get their own slot.
+  static String emailFor(String deviceId, String slot) {
+    if (slot.isEmpty) return '$deviceId@glow.app';
+    return '$deviceId.$slot@glow.app';
+  }
+
+  static String passwordFor(String deviceId, String slot) {
+    if (slot.isEmpty) return '${deviceId}_secret_glow_2026';
+    return '${deviceId}.${slot}_secret_glow_2026';
   }
 }

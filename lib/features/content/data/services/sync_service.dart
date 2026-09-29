@@ -1,5 +1,7 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
+import 'package:get_it/get_it.dart';
+import '../../../auth/data/child_account_service.dart';
 import 'package:internet_connection_checker/internet_connection_checker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../core/audio/admin_phrase_voice.dart';
@@ -177,23 +179,29 @@ class SyncService {
     }
 
     try {
-      // 1. Upload Pending Offline Completions
+      // 1. Upload pending completions for the child who earned them.
+      final accounts = GetIt.instance<ChildAccountService>();
+      try {
+        await accounts.prepareForSync();
+      } catch (error) {
+        debugPrint('child account sync skipped: $error');
+      }
       final pending = await localDataSource.getPendingCompletions();
       for (var item in pending) {
         final cId = item['child_id'];
         final mId = item['mission_id'];
-        if (cId != null && mId != null) {
-          try {
-            await remoteDataSource.completeMission(mId, cId);
-            await localDataSource.removePendingCompletion(cId, mId);
-          } catch (e) {
-            syncState.value = SyncStatusState(
-              status: SyncStatus.error,
-              message: 'تعذر رفع الإنجازات لسوبابيز. تأكد من إعدادات الأمان (RLS):\n$e',
-            );
-            _isSyncRunning = false;
-            return;
-          }
+        if (cId == null || mId == null) continue;
+        if (!await accounts.ensureSession(cId)) continue;
+        try {
+          await remoteDataSource.completeMission(mId, cId);
+          await localDataSource.removePendingCompletion(cId, mId);
+        } catch (e) {
+          syncState.value = SyncStatusState(
+            status: SyncStatus.error,
+            message: 'تعذر رفع الإنجازات لسوبابيز. تأكد من إعدادات الأمان (RLS):\n$e',
+          );
+          _isSyncRunning = false;
+          return;
         }
       }
 
@@ -243,10 +251,13 @@ class SyncService {
 
       // 5. Sync Child Progress
       if (childId != null && childId.isNotEmpty) {
-        try {
-          final remoteProgress = await remoteDataSource.getCompletedMissions(childId);
-          await localDataSource.cacheChildProgress(childId, remoteProgress);
-        } catch (_) {}
+        final ready = await GetIt.instance<ChildAccountService>().ensureSession(childId);
+        if (ready) {
+          try {
+            final remoteProgress = await remoteDataSource.getCompletedMissions(childId);
+            await localDataSource.cacheChildProgress(childId, remoteProgress);
+          } catch (_) {}
+        }
       }
 
       _lastSyncTime = DateTime.now();

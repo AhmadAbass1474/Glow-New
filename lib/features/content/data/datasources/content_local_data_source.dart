@@ -41,6 +41,7 @@ abstract class ContentLocalDataSource {
   Future<List<Map<String, String>>> getPendingCompletions();
   Future<void> removePendingCompletion(String childId, String missionId);
   Future<void> clearPendingCompletions();
+  Future<void> reassignChildId(String fromId, String toId);
 }
 
 class ContentLocalDataSourceImpl implements ContentLocalDataSource {
@@ -251,5 +252,43 @@ class ContentLocalDataSourceImpl implements ContentLocalDataSource {
   @override
   Future<void> clearPendingCompletions() async {
     await pendingBox.delete('pending_list');
+  }
+
+  @override
+  Future<void> reassignChildId(String fromId, String toId) async {
+    if (fromId == toId) return;
+    final progress = await getCachedChildProgress(fromId);
+    if (progress.isNotEmpty) {
+      final kept = await getCachedChildProgress(toId);
+      final seen = kept.map((item) => item.missionId).toSet();
+      for (final item in progress) {
+        if (!seen.add(item.missionId)) continue;
+        kept.add(ChildProgressModel(
+          id: item.id,
+          childId: toId,
+          missionId: item.missionId,
+          completedAt: item.completedAt,
+          missionTitle: item.missionTitle,
+          badgeName: item.badgeName,
+          starsReward: item.starsReward,
+        ));
+      }
+      await cacheChildProgress(toId, kept);
+      await progressBox.delete('progress_$fromId');
+    }
+
+    final pending = await getPendingCompletions();
+    var changed = false;
+    for (var index = 0; index < pending.length; index++) {
+      if (pending[index]['child_id'] != fromId) continue;
+      pending[index] = {
+        'child_id': toId,
+        'mission_id': pending[index]['mission_id'] ?? '',
+      };
+      changed = true;
+    }
+    if (changed) {
+      await pendingBox.put('pending_list', json.encode(pending));
+    }
   }
 }

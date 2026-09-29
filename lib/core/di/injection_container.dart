@@ -8,6 +8,8 @@ import 'package:internet_connection_checker/internet_connection_checker.dart';
 
 import '../../core/network/network_info.dart';
 import '../../core/services/resource_manager.dart';
+import '../../features/auth/data/account_transfer.dart';
+import '../../features/auth/data/child_account_service.dart';
 import '../../features/auth/data/datasources/auth_remote_data_source.dart';
 import '../../features/auth/data/datasources/auth_local_data_source.dart';
 import '../../features/auth/data/repositories/auth_repository_impl.dart';
@@ -21,6 +23,7 @@ import '../../features/content/data/datasources/content_remote_data_source.dart'
 import '../../features/content/data/datasources/content_local_data_source.dart';
 import '../../features/content/data/repositories/content_repository_impl.dart';
 import '../../features/content/data/services/sync_service.dart';
+import '../../features/dashboard/data/child_activity.dart';
 import '../../features/content/domain/repositories/content_repository.dart';
 import '../../features/content/domain/usecases/world_usecases.dart';
 import '../../features/content/domain/usecases/mission_usecases.dart';
@@ -104,6 +107,14 @@ Future<void> init() async {
     () => ContentRemoteDataSourceImpl(sl()),
   );
 
+  sl.registerLazySingleton(
+    () => ChildActivityLogger(
+      Hive.box('content_pending_sync'),
+      sl(),
+      sl(),
+    ),
+  );
+
   sl.registerLazySingleton<ContentLocalDataSource>(
     () => ContentLocalDataSourceImpl(
       worldsBox: Hive.box('content_worlds'),
@@ -122,6 +133,24 @@ Future<void> init() async {
       localDataSource: sl(),
       networkInfo: sl(),
       resourceManager: sl(),
+    ),
+  );
+
+  sl.registerLazySingleton<AccountTransfer>(
+    () => AccountTransfer(
+      accounts: sl(),
+      supabase: sl(),
+      networkInfo: sl(),
+    ),
+  );
+
+  sl.registerLazySingleton<ChildAccountService>(
+    () => ChildAccountService(
+      box: sl(),
+      supabase: sl(),
+      networkInfo: sl(),
+      localDataSource: sl(),
+      contentLocalDataSource: sl(),
     ),
   );
 

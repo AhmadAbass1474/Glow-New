@@ -131,11 +131,13 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
 
       if (user == null) throw Exception('Failed to sign up parent');
 
-      // 2. Link parent to child via RPC
-      await supabaseClient.rpc('link_parent_to_child', params: {
-        'p_parent_id': user.id,
-        'p_child_code': childCode,
-      });
+      final code = childCode.trim();
+      if (code.isNotEmpty) {
+        await supabaseClient.rpc('link_parent_to_child', params: {
+          'p_parent_id': user.id,
+          'p_child_code': code,
+        });
+      }
 
       // 3. Assuming parents are also in a users table or we just construct the model
       return UserModel(id: user.id, email: email, role: 'parent');

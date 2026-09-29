@@ -8,11 +8,14 @@ abstract class AuthLocalDataSource {
   Future<UserModel?> getLastUser();
   Future<void> cacheChild(ChildProfileModel childToCache);
   Future<ChildProfileModel?> getLastChild();
+  Future<void> cacheParentSelectedChild(String childId);
+  Future<String?> getParentSelectedChild();
   Future<void> clearCache();
 }
 
 const CACHED_USER = 'CACHED_USER';
 const CACHED_CHILD = 'CACHED_CHILD';
+const PARENT_SELECTED_CHILD = 'PARENT_SELECTED_CHILD';
 
 class AuthLocalDataSourceImpl implements AuthLocalDataSource {
   final Box box;
@@ -50,8 +53,21 @@ class AuthLocalDataSourceImpl implements AuthLocalDataSource {
   }
 
   @override
+  Future<void> cacheParentSelectedChild(String childId) async {
+    await box.put(PARENT_SELECTED_CHILD, childId);
+  }
+
+  @override
+  Future<String?> getParentSelectedChild() async {
+    final value = box.get(PARENT_SELECTED_CHILD);
+    if (value is String && value.isNotEmpty) return value;
+    return null;
+  }
+
+  @override
   Future<void> clearCache() async {
     await box.delete(CACHED_USER);
     await box.delete(CACHED_CHILD);
+    await box.delete(PARENT_SELECTED_CHILD);
   }
 }

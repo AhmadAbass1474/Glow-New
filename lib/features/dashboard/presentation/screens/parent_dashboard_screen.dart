@@ -1,11 +1,15 @@
 import 'package:Glow/core/di/injection_container.dart';
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import '../../../../core/utils/logout_helper.dart';
+import '../../../auth/presentation/widgets/parent_link_sheets.dart';
+import '../../../auth/presentation/widgets/parent_settings_sheet.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../../core/widgets/shimmer_loading.dart';
 import '../../../auth/data/datasources/auth_local_data_source.dart';
 import '../../../content/domain/repositories/content_repository.dart';
 import '../../../content/domain/entities/child_progress_entity.dart';
+import 'parent_reports_screen.dart';
 
 class ParentDashboardScreen extends StatefulWidget {
   const ParentDashboardScreen({super.key});
@@ -14,8 +18,23 @@ class ParentDashboardScreen extends StatefulWidget {
   State<ParentDashboardScreen> createState() => _ParentDashboardScreenState();
 }
 
+class _LinkedChild {
+  const _LinkedChild({
+    required this.id,
+    required this.name,
+    required this.age,
+    required this.code,
+  });
+
+  final String id;
+  final String name;
+  final int age;
+  final String code;
+}
+
 class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
   bool _isLoading = true;
+  List<_LinkedChild> _children = [];
   String? _childId;
   String? _childName;
 
@@ -24,7 +43,6 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
   int _totalBadges = 0;
 
   List<ChildProgressEntity> _recentProgress = [];
-  final TextEditingController _codeController = TextEditingController();
 
   @override
   void initState() {
@@ -32,39 +50,63 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
     _fetchData();
   }
 
-  Future<void> _fetchData() async {
+  Future<void> _fetchData({String? preferCode}) async {
     setState(() => _isLoading = true);
 
     try {
       final parentId = Supabase.instance.client.auth.currentUser?.id;
 
       if (parentId != null) {
-        // Query child linked to this parent
         final childrenData = await Supabase.instance.client
             .from('children_profiles')
             .select()
-            .eq('parent_id', parentId)
-            .limit(1);
+            .eq('parent_id', parentId);
 
-        if (childrenData.isNotEmpty) {
-          final childData = childrenData.first;
-          _childId = childData['id'];
-          _childName = childData['name'];
-          
-          if (mounted) {
-            setState(() {
-              _totalStars = childData['total_stars'] ?? 0;
-              _totalBadges = childData['total_badges'] ?? 0;
-              _totalMissions = childData['total_missions'] ?? 0;
-            });
+        final linked = <_LinkedChild>[
+          for (final row in childrenData)
+            _LinkedChild(
+              id: row['id'] as String,
+              name: (row['name'] as String?) ?? '',
+              age: (row['age'] as num?)?.toInt() ?? 0,
+              code: (row['child_code'] as String?) ?? '',
+            ),
+        ]..sort((a, b) => a.name.compareTo(b.name));
+
+        final savedId = await sl<AuthLocalDataSource>().getParentSelectedChild();
+        final wantedCode = preferCode?.trim();
+        _LinkedChild? selected;
+        for (final child in linked) {
+          if (wantedCode != null &&
+              wantedCode.isNotEmpty &&
+              child.code == wantedCode) {
+            selected = child;
+            break;
           }
-        } else {
-          debugPrint('childData is null for parent_id: $parentId');
-          if (mounted) {
-             ScaffoldMessenger.of(context).showSnackBar(
-               const SnackBar(content: Text('لم يتم العثور على طفل مرتبط بهذا الحساب في قاعدة البيانات.')),
-             );
+        }
+        if (selected == null && savedId != null) {
+          for (final child in linked) {
+            if (child.id == savedId) {
+              selected = child;
+              break;
+            }
           }
+        }
+        if (selected == null && linked.isNotEmpty) selected = linked.first;
+
+        _children = linked;
+        _childId = selected?.id;
+        _childName = selected?.name;
+        if (selected != null) {
+          await sl<AuthLocalDataSource>().cacheParentSelectedChild(selected.id);
+        }
+
+        if (mounted) {
+          setState(() {
+            _totalStars = 0;
+            _totalBadges = 0;
+            _totalMissions = 0;
+            _recentProgress = [];
+          });
         }
       }
 
@@ -118,203 +160,213 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
     }
   }
 
-  Future<void> _linkChild() async {
-    final code = _codeController.text.trim();
-    if (code.isEmpty) return;
+  Future<bool> _linkChild(String scanned) async {
+    final code = scanned.trim();
+    if (code.isEmpty) return false;
 
     setState(() => _isLoading = true);
 
     try {
       final parentId = Supabase.instance.client.auth.currentUser?.id;
-      if (parentId != null) {
-        await Supabase.instance.client.rpc('link_parent_to_child', params: {
-          'p_parent_id': parentId,
-          'p_child_code': code,
-        });
-
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('تم ربط حساب طفلك بنجاح!')),
-          );
-        }
-        await _fetchData();
+      if (parentId == null) {
+        if (mounted) setState(() => _isLoading = false);
+        return false;
       }
-    } catch (e) {
-      setState(() => _isLoading = false);
+      await Supabase.instance.client.rpc('link_parent_to_child', params: {
+        'p_parent_id': parentId,
+        'p_child_code': code,
+      });
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('خطأ في ربط الحساب، تأكد من صحة الكود.')),
+          const SnackBar(content: Text('تم ربط حساب طفلك بنجاح!')),
         );
       }
+      await _fetchData(preferCode: code);
+      return true;
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('تعذر الربط. تأكد أن الرمز ما زال ظاهرًا.')),
+        );
+      }
+      return false;
     }
-  }
-
-  @override
-  void dispose() {
-    _codeController.dispose();
-    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      extendBodyBehindAppBar: true,
+      backgroundColor: AppColors.background,
       appBar: AppBar(
-        elevation: 0,
-        backgroundColor: Colors.white.withOpacity(0.4),
-        flexibleSpace: Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: [
-                Colors.white.withOpacity(0.8),
-                Colors.white.withOpacity(0.0),
-              ],
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-            ),
-          ),
-        ),
-        title: const Text(
+        title: Text(
           'لوحة تحكم ولي الأمر',
-          style: TextStyle(
-            color: Color(0xFF2C3E50),
+          style: Theme.of(context).textTheme.titleLarge?.copyWith(
+            color: AppColors.secondary,
             fontWeight: FontWeight.w900,
-            letterSpacing: 1.2,
           ),
         ),
-        centerTitle: false,
         actions: [
-          IconButton(
-            icon: const Icon(Icons.more_vert_rounded, color: Color(0xFF34495E)),
-            onPressed: () => showLogoutBottomSheet(context),
-            tooltip: 'الخيارات',
-          ),
-        ],
-      ),
-      body: Container(
-        width: double.infinity,
-        height: double.infinity,
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              Color(0xFFE0F7FA), // Light Blue
-              Color(0xFFF3E5F5), // Light Purple
-              Color(0xFFFFF3E0), // Light Orange
-            ],
-          ),
-        ),
-        child: RefreshIndicator(
-          onRefresh: _fetchData,
-          color: const Color(0xFF9B59B6),
-          child: _isLoading
-              ? const Center(
-                  child: CircularProgressIndicator(color: Color(0xFF9B59B6)),
-                )
-              : SafeArea(
-                  child: SingleChildScrollView(
-                    physics: const AlwaysScrollableScrollPhysics(),
-                    padding: const EdgeInsets.all(20),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        if (_childId == null)
-                          _buildLinkChildView()
-                        else ...[
-                          _buildInsightsBanner(),
-                          const SizedBox(height: 24),
-                          _buildMetricsGrid(),
-                          const SizedBox(height: 32),
-                          const Text(
-                            'أحدث الإنجازات',
-                            style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                              color: Color(0xFF2C3E50),
-                            ),
-                          ),
-                          const SizedBox(height: 16),
-                          _buildRecentAchievements(),
-                        ],
-                      ],
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 10),
+            child: Material(
+              color: AppColors.surface,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(AppColors.border_radius),
+                side: const BorderSide(color: AppColors.inputBorder, width: 1.5),
+              ),
+              child: InkWell(
+                onTap: () {
+                  context.push(
+                    '/parent/reports',
+                    extra: ParentReportArgs(childId: _childId, childName: _childName),
+                  );
+                },
+                borderRadius: BorderRadius.circular(AppColors.border_radius),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  child: Text(
+                    'تقارير',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      color: AppColors.secondary,
+                      fontWeight: FontWeight.w900,
                     ),
                   ),
                 ),
-        ),
+              ),
+            ),
+          ),
+          IconButton(
+            tooltip: 'الإعدادات',
+            onPressed: () {
+              showParentSettingsSheet(
+                context,
+                children: [
+                  for (final child in _children)
+                    ParentLinkedChild(
+                      id: child.id,
+                      name: child.name,
+                      age: child.age,
+                    ),
+                ],
+                selectedId: _childId,
+                onLink: (code) => _linkChild(code),
+                onSelect: (id) async {
+                  await sl<AuthLocalDataSource>().cacheParentSelectedChild(id);
+                  if (!mounted) return;
+                  await _fetchData();
+                },
+                onLogout: () async {
+                  await sl<AuthLocalDataSource>().clearCache();
+                  if (context.mounted) context.go('/role-selection');
+                },
+              );
+            },
+            icon: const Icon(Icons.more_vert, color: AppColors.secondary),
+          ),
+        ],
+      ),
+      body: RefreshIndicator(
+          onRefresh: _fetchData,
+          color: AppColors.primary,
+          child: _isLoading
+              ? const ShimmerLoading(type: ShimmerType.list)
+              : SafeArea(
+                  child: _childId == null
+                      ? CustomScrollView(
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          slivers: [
+                            SliverFillRemaining(
+                              hasScrollBody: false,
+                              child: Padding(
+                                padding: const EdgeInsets.all(10),
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [_buildLinkChildView()],
+                                ),
+                              ),
+                            ),
+                          ],
+                        )
+                      : SingleChildScrollView(
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          padding: const EdgeInsets.all(10),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                _childName ?? '',
+                                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                                  fontWeight: FontWeight.w900,
+                                  color: AppColors.secondary,
+                                ),
+                              ),
+                              const SizedBox(height: 16),
+                              _buildInsightsBanner(),
+                              const SizedBox(height: 24),
+                              _buildMetricsGrid(),
+                              const SizedBox(height: 32),
+                              Text(
+                                'أحدث الإنجازات',
+                                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                  fontWeight: FontWeight.bold,
+                                  color: AppColors.secondary,
+                                ),
+                              ),
+                              const SizedBox(height: 16),
+                              _buildRecentAchievements(),
+                            ],
+                          ),
+                        ),
+                ),
       ),
     );
   }
 
+  Future<void> _scanAndLink() async {
+    final code = await showParentLinkScanner(context);
+    if (code == null || !mounted) return;
+    await _linkChild(code);
+  }
+
   Widget _buildLinkChildView() {
+    final textTheme = Theme.of(context).textTheme;
     return Container(
-      padding: const EdgeInsets.all(24),
+      padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppColors.surface,
         borderRadius: BorderRadius.circular(AppColors.border_radius),
-        border: Border.all(color: Colors.grey.withOpacity(0.3), width: 1.5),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
+        border: Border.all(color: AppColors.inputBorder, width: 1.5),
       ),
       child: Column(
         children: [
           const Icon(
-            Icons.child_care_rounded,
+            Icons.qr_code_scanner,
             size: 64,
-            color: AppColors.primary,
+            color: AppColors.secondary,
           ),
           const SizedBox(height: 16),
-          const Text(
-            'لم تقم بربط حساب طفلك بعد!',
-            style: TextStyle(
-              fontSize: 18,
+          Text(
+            'لم تربط حساب ابنك بعد',
+            style: textTheme.titleMedium?.copyWith(
               fontWeight: FontWeight.bold,
-              color: Color(0xFF2C3E50),
+              color: AppColors.secondary,
             ),
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 8),
-          const Text(
-            'أدخل كود طفلك التعريفي (مثال: CH-1234) للبدء في متابعة تطوره.',
-            style: TextStyle(fontSize: 14, color: Color(0xFF7F8C8D)),
+          Text(
+            'من هاتف الابن افتح ربط ولي الأمر، ثم امسح الرمز من هنا.',
+            style: textTheme.bodyMedium?.copyWith(color: AppColors.secondary),
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 24),
-          TextField(
-            controller: _codeController,
-            decoration: InputDecoration(
-              hintText: 'كود الطفل',
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(AppColors.border_radius),
-              ),
-              prefixIcon: const Icon(Icons.vpn_key_rounded),
-            ),
-          ),
-          const SizedBox(height: 16),
           SizedBox(
             width: double.infinity,
-            height: 48,
-            child: ElevatedButton(
-              onPressed: _isLoading ? null : _linkChild,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primary,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(AppColors.border_radius),
-                ),
-              ),
-              child: const Text(
-                'ربط الحساب',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.onPrimary,
-                ),
-              ),
+            child: FilledButton(
+              onPressed: _isLoading ? null : _scanAndLink,
+              child: const Text('مسح رمز الابن'),
             ),
           ),
         ],
@@ -326,31 +378,24 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
     // Dynamic insight message based on engagement
     String message = 'لم يبدأ البطل أي مهمات بعد. شجعه على الانطلاق!';
     IconData icon = Icons.wb_incandescent_rounded;
-    Color color = const Color(0xFFF39C12); // Orange
+    Color color = AppColors.primary;
 
     if (_totalMissions > 10) {
       message = 'رائع جداً! بطلنا يتقدم بشكل ممتاز ومنتظم في إنجاز التحديات.';
       icon = Icons.emoji_events_rounded;
-      color = const Color(0xFF2ECC71); // Green
+      color = AppColors.tertiary;
     } else if (_totalMissions > 0) {
       message = 'بداية موفقة! بطلنا يكتسب مهارات جديدة مع كل مهمة.';
       icon = Icons.star_rounded;
-      color = const Color(0xFF9B59B6); // Purple
+      color = AppColors.secondary;
     }
 
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppColors.surface,
         borderRadius: BorderRadius.circular(AppColors.border_radius),
-        boxShadow: [
-          BoxShadow(
-            color: color.withOpacity(0.1),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
-        border: Border.all(color: Colors.grey.withOpacity(0.3), width: 1.5),
+        border: Border.all(color: AppColors.inputBorder, width: 1.5),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -358,7 +403,7 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: color.withOpacity(0.1),
+              color: color.withValues(alpha: 0.12),
               shape: BoxShape.circle,
             ),
             child: Icon(icon, color: color, size: 32),
@@ -382,7 +427,7 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
                   style: const TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
-                    color: Color(0xFF34495E),
+                    color: AppColors.onSurface,
                     height: 1.4,
                   ),
                 ),
@@ -402,7 +447,7 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
             title: 'المهمات',
             value: _totalMissions.toString(),
             icon: Icons.task_alt_rounded,
-            color: const Color(0xFF3498DB),
+            color: AppColors.secondary,
           ),
         ),
         const SizedBox(width: 12),
@@ -411,7 +456,7 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
             title: 'النقاط',
             value: _totalStars.toString(),
             icon: Icons.star_rounded,
-            color: const Color(0xFFF39C12),
+            color: AppColors.primary,
           ),
         ),
         const SizedBox(width: 12),
@@ -420,7 +465,7 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
             title: 'الأوسمة',
             value: _totalBadges.toString(),
             icon: Icons.workspace_premium_rounded,
-            color: const Color(0xFF9B59B6),
+            color: AppColors.tertiary,
           ),
         ),
       ],
@@ -434,25 +479,18 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
     required Color color,
   }) {
     return Container(
-      padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
+      padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppColors.surface,
         borderRadius: BorderRadius.circular(AppColors.border_radius),
-        border: Border.all(color: Colors.grey.withOpacity(0.3), width: 1.5),
-        boxShadow: [
-          BoxShadow(
-            color: color.withOpacity(0.1),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
+        border: Border.all(color: AppColors.inputBorder, width: 1.5),
       ),
       child: Column(
         children: [
           Container(
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
-              color: color.withOpacity(0.1),
+              color: color.withValues(alpha: 0.12),
               shape: BoxShape.circle,
             ),
             child: Icon(icon, color: color, size: 28),
@@ -471,7 +509,7 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
             title,
             style: const TextStyle(
               fontSize: 14,
-              color: Color(0xFF7F8C8D),
+              color: AppColors.secondary,
               fontWeight: FontWeight.bold,
             ),
           ),
@@ -487,11 +525,13 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
           padding: const EdgeInsets.symmetric(vertical: 40),
           child: Column(
             children: [
-              Icon(Icons.history_rounded, size: 60, color: Colors.grey[300]),
+              const Icon(Icons.history_rounded, size: 60, color: AppColors.inputBorder),
               const SizedBox(height: 16),
-              const Text(
+              Text(
                 'لا توجد إنجازات بعد',
-                style: TextStyle(color: Colors.grey, fontSize: 16),
+                style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                  color: AppColors.secondary,
+                ),
               ),
             ],
           ),
@@ -517,18 +557,11 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
             '${d.year}/${d.month.toString().padLeft(2, '0')}/${d.day.toString().padLeft(2, '0')} - ${d.hour > 12 ? d.hour - 12 : (d.hour == 0 ? 12 : d.hour)}:${d.minute.toString().padLeft(2, '0')} ${d.hour >= 12 ? 'م' : 'ص'}';
 
         return Container(
-          padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: AppColors.surface,
             borderRadius: BorderRadius.circular(AppColors.border_radius),
-            border: Border.all(color: Colors.grey.withOpacity(0.3), width: 1.5),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.05),
-                blurRadius: 8,
-                offset: const Offset(0, 4),
-              ),
-            ],
+            border: Border.all(color: AppColors.inputBorder, width: 1.5),
           ),
           child: Row(
             children: [
@@ -537,17 +570,15 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
                 height: 56,
                 decoration: BoxDecoration(
                   color: hasBadge
-                      ? const Color(0xFF9B59B6).withOpacity(0.1)
-                      : const Color(0xFF3498DB).withOpacity(0.1),
+                      ? AppColors.tertiary.withValues(alpha: 0.12)
+                      : AppColors.secondary.withValues(alpha: 0.12),
                   shape: BoxShape.circle,
                 ),
                 child: Icon(
                   hasBadge
                       ? Icons.workspace_premium_rounded
                       : Icons.task_alt_rounded,
-                  color: hasBadge
-                      ? const Color(0xFF9B59B6)
-                      : const Color(0xFF3498DB),
+                  color: hasBadge ? AppColors.tertiary : AppColors.secondary,
                   size: 32,
                 ),
               ),
@@ -563,7 +594,7 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
                       style: const TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.bold,
-                        color: Color(0xFF2C3E50),
+                        color: AppColors.secondary,
                       ),
                     ),
                     const SizedBox(height: 4),
@@ -572,7 +603,7 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
                       style: const TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.w600,
-                        color: Color(0xFF7F8C8D),
+                        color: AppColors.secondary,
                       ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -590,13 +621,13 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
                         style: const TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.bold,
-                          color: Color(0xFFE67E22), // Deep orange
+                          color: AppColors.primary,
                         ),
                       ),
                       const SizedBox(width: 4),
                       const Icon(
                         Icons.star_rounded,
-                        color: Colors.amber,
+                        color: AppColors.primary,
                         size: 18,
                       ),
                     ],
@@ -607,7 +638,7 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
                     style: const TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
-                      color: Color(0xFFBDC3C7),
+                      color: AppColors.secondary,
                     ),
                   ),
                 ],

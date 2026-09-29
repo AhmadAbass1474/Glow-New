@@ -1,6 +1,8 @@
 import 'package:fpdart/fpdart.dart';
+import 'package:get_it/get_it.dart';
 import '../../../../core/errors/failures.dart';
 import '../../../../core/network/network_info.dart';
+import '../child_account_service.dart';
 import '../../domain/entities/child_profile_entity.dart';
 import '../../domain/entities/user_entity.dart';
 import '../../domain/repositories/auth_repository.dart';
@@ -24,26 +26,15 @@ class AuthRepositoryImpl implements AuthRepository {
     required int age,
     required String avatarUrl,
   }) async {
-    if (await networkInfo.isConnected) {
-      try {
-        final childProfile = await remoteDataSource.registerChild(
-          name: name,
-          age: age,
-          avatarUrl: avatarUrl,
-        );
-        // Cache locally for offline use
-        await localDataSource.cacheChild(childProfile);
-        return Right(childProfile);
-      } catch (e) {
-        return Left(ServerFailure(e.toString()));
-      }
-    } else {
-      // Offline fallback
-      final cachedChild = await localDataSource.getLastChild();
-      if (cachedChild != null) {
-        return Right(cachedChild);
-      }
-      return const Left(ServerFailure('لا يوجد اتصال بالإنترنت ولا بيانات محفوظة'));
+    try {
+      final childProfile = await GetIt.instance<ChildAccountService>().register(
+        name: name,
+        age: age,
+        avatarUrl: avatarUrl,
+      );
+      return Right(childProfile);
+    } catch (e) {
+      return Left(ServerFailure(e.toString()));
     }
   }
 

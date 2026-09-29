@@ -16,9 +16,10 @@ import '../../../../core/widgets/offline_aware_image.dart';
 import '../../../../core/widgets/shimmer_loading.dart';
 import '../../../auth/data/datasources/auth_local_data_source.dart';
 import '../../../content/data/services/sync_service.dart';
+import '../../data/child_activity.dart';
+import '../../../content/data/datasources/content_local_data_source.dart';
 import '../../../content/domain/repositories/content_repository.dart';
-import '../../../../core/utils/logout_helper.dart';
-import '../../../../core/widgets/custom_loader.dart';
+import '../../../../core/widgets/child_account_sheets.dart';
 import '../../../../core/services/character_asset_cache.dart';
 import '../../../../core/audio/child_button_voice.dart';
 
@@ -31,15 +32,17 @@ class ChildDashboardScreen extends StatefulWidget {
 
 class _ChildDashboardScreenState extends State<ChildDashboardScreen> {
   late ContentBloc _contentBloc;
-  final ValueNotifier<({int stars, int badges, int completedMissionsCount})>
+  final ValueNotifier<
+    ({int stars, int badges, int completedMissionsCount, Set<String> finishedWorldIds})
+  >
   _statsNotifier =
-      ValueNotifier<({int stars, int badges, int completedMissionsCount})>((
+      ValueNotifier((
         stars: 0,
         badges: 0,
         completedMissionsCount: 0,
+        finishedWorldIds: <String>{},
       ));
   String? _childId;
-  String? _childCode;
   late final SyncService _syncService;
 
   @override
@@ -58,7 +61,6 @@ class _ChildDashboardScreenState extends State<ChildDashboardScreen> {
     if (mounted && childId != null) {
       setState(() {
         _childId = childId;
-        _childCode = cachedChild?.childCode;
       });
     }
 
@@ -72,6 +74,9 @@ class _ChildDashboardScreenState extends State<ChildDashboardScreen> {
 
     _contentBloc.add(const ContentEvent.getWorlds());
     await _fetchProgress();
+    if (childId != null) {
+      await sl<ChildActivityLogger>().entered();
+    }
 
     _syncService.syncState.addListener(_onSyncStateChanged);
   }
@@ -79,6 +84,16 @@ class _ChildDashboardScreenState extends State<ChildDashboardScreen> {
   void _onSyncStateChanged() {
     // Sync errors and success are now completely silent to the child.
     // The top status bar icon (cloud) alone will reflect the current state.
+  }
+
+  Future<void> _reloadChild() async {
+    final cachedChild = await sl<AuthLocalDataSource>().getLastChild();
+    if (!mounted) return;
+    setState(() {
+      _childId = cachedChild?.id;
+    });
+    await _fetchProgress();
+    _syncService.syncAll(childId: _childId, silent: true);
   }
 
   Future<void> _fetchProgress() async {
@@ -92,20 +107,34 @@ class _ChildDashboardScreenState extends State<ChildDashboardScreen> {
       final result = await sl<ContentRepository>().getCompletedMissions(
         _childId!,
       );
-      result.fold((_) {}, (progressList) {
+      result.fold((_) {}, (progressList) async {
         int stars = 0;
         int badges = 0;
+        final completed = <String>{};
         for (var p in progressList) {
           stars += p.starsReward ?? 0;
           if (p.badgeName != null && p.badgeName!.isNotEmpty) {
             badges++;
           }
+          completed.add(p.missionId);
         }
-        // Only notify stats listener; does NOT rebuild worlds list
+        final missions = await sl<ContentLocalDataSource>().getAllCachedMissions();
+        final missionIdsByWorld = <String, List<String>>{};
+        for (final mission in missions) {
+          (missionIdsByWorld[mission.worldId] ??= []).add(mission.id);
+        }
+        final finishedWorldIds = <String>{};
+        for (final entry in missionIdsByWorld.entries) {
+          final ids = entry.value;
+          if (ids.isEmpty) continue;
+          if (ids.every(completed.contains)) finishedWorldIds.add(entry.key);
+        }
+        if (!mounted) return;
         _statsNotifier.value = (
           stars: stars,
           badges: badges,
           completedMissionsCount: progressList.length,
+          finishedWorldIds: finishedWorldIds,
         );
       });
     }
@@ -139,51 +168,6 @@ class _ChildDashboardScreenState extends State<ChildDashboardScreen> {
                   color: Color(0xFF2C3E50),
                 ),
               ),
-              if (_childCode != null) ...[
-                const SizedBox(height: 2),
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      'كود الربط: $_childCode',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey.shade600,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    InkWell(
-                      onTap: () {
-                        ChildButtonVoice.press('نسخ الكود', () async {
-                        Clipboard.setData(ClipboardData(text: _childCode!));
-                        if (!context.mounted) return;
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: const Text(
-                              'تم نسخ كود الربط بنجاح!',
-                              style: TextStyle(fontFamily: 'Cairo'),
-                            ),
-                            backgroundColor: const Color(0xFF2ECC71),
-                            behavior: SnackBarBehavior.floating,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(
-                                AppColors.border_radius,
-                              ),
-                            ),
-                          ),
-                        );
-                        }, single: true);
-                      },
-                      child: Icon(
-                        Icons.copy_rounded,
-                        size: 14,
-                        color: Colors.grey.shade600,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
             ],
           ),
           centerTitle: false,
@@ -205,7 +189,12 @@ class _ChildDashboardScreenState extends State<ChildDashboardScreen> {
           ),
           actions: [
             ValueListenableBuilder<
-              ({int stars, int badges, int completedMissionsCount})
+              ({
+                int stars,
+                int badges,
+                int completedMissionsCount,
+                Set<String> finishedWorldIds,
+              })
             >(
               valueListenable: _statsNotifier,
               builder: (context, stats, _) {
@@ -243,6 +232,8 @@ class _ChildDashboardScreenState extends State<ChildDashboardScreen> {
                     GestureDetector(
                       onTap: () {
                         ChildButtonVoice.press('أوسمتي', () async {
+                          if (!context.mounted) return;
+                          await sl<ChildActivityLogger>().openedBadges();
                           if (!context.mounted) return;
                           await context.push('/child/badges');
                           _fetchProgress();
@@ -313,9 +304,12 @@ class _ChildDashboardScreenState extends State<ChildDashboardScreen> {
               padding: const EdgeInsets.only(left: 10),
               child: InkWell(
                 onTap: () {
-                  ChildButtonVoice.press('تسجيل الخروج', () async {
+                  ChildButtonVoice.press('الإعدادات', () async {
                     if (!context.mounted) return;
-                    showLogoutBottomSheet(context, readAloud: true);
+                    await showChildSettingsSheet(
+                      context,
+                      onAccountChanged: _reloadChild,
+                    );
                   }, single: true);
                 },
                 child: const Icon(
@@ -392,7 +386,12 @@ class _ChildDashboardScreenState extends State<ChildDashboardScreen> {
                         }
 
                         return ValueListenableBuilder<
-                          ({int stars, int badges, int completedMissionsCount})
+                          ({
+                            int stars,
+                            int badges,
+                            int completedMissionsCount,
+                            Set<String> finishedWorldIds,
+                          })
                         >(
                           valueListenable: _statsNotifier,
                           builder: (context, stats, child) {
@@ -413,8 +412,9 @@ class _ChildDashboardScreenState extends State<ChildDashboardScreen> {
                                   final world = worlds[index];
                                   final bool isLocked =
                                       index > 0 &&
-                                      stats.completedMissionsCount <
-                                          (index * 2);
+                                      !stats.finishedWorldIds.contains(
+                                        worlds[index - 1].id,
+                                      );
 
                                   return RepaintBoundary(
                                     child: GestureDetector(
@@ -445,10 +445,14 @@ class _ChildDashboardScreenState extends State<ChildDashboardScreen> {
                                         HapticFeedback.lightImpact();
                                         ChildButtonVoice.press(world.title, () async {
                                           if (!context.mounted) return;
-                                          context.push(
+                                          await sl<ChildActivityLogger>().openedWorld(world.title);
+                                          if (!context.mounted) return;
+                                          await context.push(
                                             '/child/world-missions',
                                             extra: world,
                                           );
+                                          if (!mounted) return;
+                                          await _fetchProgress();
                                         }, single: true);
                                       },
                                       child: Container(

@@ -1,12 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
-import '../../../../core/di/injection_container.dart';
-import '../../../../core/utils/device_id_helper.dart';
-import '../../data/datasources/auth_local_data_source.dart';
-import '../../data/models/child_profile_model.dart';
-import '../../../../core/widgets/custom_loader.dart';
+import '../../../../core/theme/app_colors.dart';
+import '../../../../core/widgets/child_account_sheets.dart';
+import '../widgets/account_transfer_sheets.dart';
 
 class RoleSelectionScreen extends StatelessWidget {
   const RoleSelectionScreen({super.key});
@@ -20,6 +17,18 @@ class RoleSelectionScreen extends StatelessWidget {
           style: TextStyle(fontWeight: FontWeight.bold),
         ),
         elevation: 0,
+        actions: [
+          IconButton(
+            tooltip: 'مسح نقل الحساب',
+            onPressed: () async {
+              HapticFeedback.lightImpact();
+              final code = await showAccountScanner(context);
+              if (code == null || !context.mounted) return;
+              await claimScannedCode(context, code);
+            },
+            icon: const Icon(Icons.qr_code_scanner, color: AppColors.secondary),
+          ),
+        ],
       ),
       body: SafeArea(
         child: Padding(
@@ -32,52 +41,9 @@ class RoleSelectionScreen extends StatelessWidget {
                 title: 'طفل (مغامر صغير)',
                 icon: Icons.face_retouching_natural,
                 color: Theme.of(context).colorScheme.tertiary,
-                onTap: () async {
+                onTap: () {
                   HapticFeedback.lightImpact();
-                  
-                  // إظهار مؤشر التحميل
-                  showDialog(
-                    context: context,
-                    barrierDismissible: false,
-                    builder: (context) => const CustomLoader(),
-                  );
-                  
-                  try {
-                    final deviceId = await DeviceIdHelper.getDeviceId();
-                    final email = DeviceIdHelper.generateDeviceEmail(deviceId);
-                    final password = DeviceIdHelper.generateDevicePassword(deviceId);
-                    
-                    final supabase = Supabase.instance.client;
-                    final response = await supabase.auth.signInWithPassword(
-                      email: email, 
-                      password: password
-                    );
-                    
-                    if (response.user != null) {
-                      final data = await supabase
-                          .from('children_profiles')
-                          .select()
-                          .eq('id', response.user!.id)
-                          .maybeSingle();
-                          
-                      if (data != null) {
-                        final child = ChildProfileModel.fromJson(data);
-                        await sl<AuthLocalDataSource>().cacheChild(child);
-                        if (context.mounted) {
-                          Navigator.of(context).pop(); // إخفاء التحميل
-                          context.go('/child-dashboard');
-                          return;
-                        }
-                      }
-                    }
-                  } catch (_) {
-                    // فشل الدخول الصامت، يعني لا يوجد حساب مسجل
-                  }
-                  
-                  if (context.mounted) {
-                    Navigator.of(context).pop(); // إخفاء التحميل
-                    context.go('/child-onboarding');
-                  }
+                  showChildRoleSheet(context);
                 },
               ),
               const SizedBox(height: 10),

@@ -10,6 +10,7 @@ import '../../../../core/audio/child_button_voice.dart';
 import '../../../../core/di/injection_container.dart';
 import '../../../../core/network/network_info.dart';
 import '../../../../core/utils/device_id_helper.dart';
+import '../../data/child_account_service.dart';
 import '../../data/datasources/auth_local_data_source.dart';
 import '../../data/models/child_profile_model.dart';
 import '../../../content/data/services/sync_service.dart';
@@ -45,7 +46,8 @@ class _SplashScreenState extends State<SplashScreen> {
       return;
     }
 
-    final cachedChild = await localDataSource.getLastChild();
+    final restored = await sl<ChildAccountService>().restoreLastChild();
+    final cachedChild = restored ?? await localDataSource.getLastChild();
     final isConnected = await sl<NetworkInfo>().isConnected;
 
     if (!isConnected) {
@@ -95,7 +97,7 @@ class _SplashScreenState extends State<SplashScreen> {
 
         if (data != null) {
           final child = ChildProfileModel.fromJson(data);
-          await localDataSource.cacheChild(child);
+          await sl<ChildAccountService>().rememberExisting(child: child, slot: '');
           await _syncChildIfNeeded(child.id);
           sl<SyncService>().prefetchCachedStoryAudio();
           if (mounted) {

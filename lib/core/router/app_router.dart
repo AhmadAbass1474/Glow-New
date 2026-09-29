@@ -9,6 +9,7 @@ import '../../features/auth/presentation/screens/parent_auth_screen.dart';
 import '../../features/auth/presentation/screens/admin_login_screen.dart';
 import '../../features/dashboard/presentation/screens/child_dashboard_screen.dart';
 import '../../features/dashboard/presentation/screens/parent_dashboard_screen.dart';
+import '../../features/dashboard/presentation/screens/parent_reports_screen.dart';
 import '../../features/dashboard/presentation/screens/admin_dashboard_screen.dart';
 import '../../features/content/presentation/screens/add_world_screen.dart';
 import '../../features/content/presentation/screens/world_missions_screen.dart';
@@ -145,6 +146,15 @@ class AppRouter {
       GoRoute(
         path: '/parent-dashboard',
         builder: (context, state) => const ParentDashboardScreen(),
+      ),
+      GoRoute(
+        path: '/parent/reports',
+        builder: (context, state) {
+          final args = state.extra;
+          return ParentReportsScreen(
+            args: args is ParentReportArgs ? args : const ParentReportArgs(),
+          );
+        },
       ),
       GoRoute(
         path: '/admin-login',
