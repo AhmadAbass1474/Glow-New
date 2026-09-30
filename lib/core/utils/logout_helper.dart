@@ -5,7 +5,11 @@ import '../../features/auth/data/datasources/auth_local_data_source.dart';
 import '../theme/app_colors.dart';
 import '../audio/child_button_voice.dart';
 
-void showLogoutBottomSheet(BuildContext context, {bool readAloud = false}) {
+void showLogoutBottomSheet(
+  BuildContext context, {
+  bool readAloud = false,
+  VoidCallback? onCreateOrganization,
+}) {
   showModalBottomSheet(
     context: context,
     shape: const RoundedRectangleBorder(
@@ -27,23 +31,47 @@ void showLogoutBottomSheet(BuildContext context, {bool readAloud = false}) {
                 ),
               ),
               const SizedBox(height: 24),
-              const Text(
-                'تسجيل الخروج',
-                style: TextStyle(
+              Text(
+                onCreateOrganization == null ? 'تسجيل الخروج' : 'الإعدادات',
+                style: const TextStyle(
                   fontSize: 20,
                   fontWeight: FontWeight.bold,
                 ),
               ),
-              const SizedBox(height: 8),
-              const Text(
-                'هل أنت متأكد من رغبتك في تسجيل الخروج؟',
-                style: TextStyle(
-                  fontSize: 14,
-                  color: Colors.grey,
+              if (onCreateOrganization == null) ...[
+                const SizedBox(height: 8),
+                const Text(
+                  'هل أنت متأكد من رغبتك في تسجيل الخروج؟',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.grey,
+                  ),
+                  textAlign: TextAlign.center,
                 ),
-                textAlign: TextAlign.center,
-              ),
+              ],
               const SizedBox(height: 10),
+              if (onCreateOrganization != null) ...[
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton(
+                    style: FilledButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(AppColors.border_radius),
+                      ),
+                    ),
+                    onPressed: () {
+                      Navigator.pop(context);
+                      onCreateOrganization();
+                    },
+                    child: const Text(
+                      'إنشاء حساب منظمة',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 10),
+              ],
               Row(
                 children: [
                   Expanded(

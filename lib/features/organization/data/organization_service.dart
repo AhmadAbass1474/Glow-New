@@ -53,18 +53,29 @@ class OrganizationService {
 
   static const studentPrefix = 'gst:';
 
-  Future<String> registerOrganization({
+  Future<void> createOrganizationAccount({
     required String name,
     required String email,
     required String password,
   }) async {
-    final user = await _signInOrUp(email: email, password: password);
-    await _client.from('organizations').upsert({
-      'id': user.id,
-      'name': name,
-    });
-    await _remember(user.id, email, 'organization');
-    return name;
+    final refresh = _client.auth.currentSession?.refreshToken;
+    final admin = await sl<AuthLocalDataSource>().getLastUser();
+    if (refresh == null) throw Exception('جلسة الأدمن انتهت');
+    try {
+      final created = await _signInOrUp(email: email, password: password);
+      if (_client.auth.currentUser?.id != created.id) {
+        await _client.auth.signInWithPassword(email: email, password: password);
+      }
+      await _client.from('organizations').upsert({
+        'id': created.id,
+        'name': name,
+      });
+    } finally {
+      await _client.auth.setSession(refresh);
+      if (admin != null) {
+        await sl<AuthLocalDataSource>().cacheUser(admin);
+      }
+    }
   }
 
   Future<String> signIn(String email, String password) async {

@@ -10,6 +10,7 @@ import '../../../../core/widgets/app_bottom_sheet.dart';
 import '../../../../core/widgets/shimmer_loading.dart';
 import '../../../dashboard/presentation/screens/parent_reports_screen.dart';
 import '../../data/organization_service.dart';
+import '../widgets/staff_settings_sheet.dart';
 
 class TeacherDashboardScreen extends StatefulWidget {
   const TeacherDashboardScreen({super.key});
@@ -54,20 +55,36 @@ class _TeacherDashboardScreenState extends State<TeacherDashboardScreen> {
     }
   }
 
-  Future<void> _addStudent() async {
+  void _openSettings() {
+    showStaffSettingsSheet(
+      context,
+      settings: [
+        StaffSetting(
+          title: 'إضافة طالب',
+          subtitle: 'اسم وعمر، ثم رمز يمسحه الطالب من هاتفه',
+          onTap: (sheetContext) => _addStudent(sheetContext),
+        ),
+      ],
+      onLogout: _logout,
+    );
+  }
+
+  Future<void> _addStudent(BuildContext sheetContext) async {
     final created = await showAppSheet<String>(
-      context: context,
+      context: sheetContext,
       heightFactor: 0.62,
       avoidKeyboard: true,
-      builder: (sheetContext) => _AddStudentSheet(
+      builder: (formContext) => _AddStudentSheet(
         onSubmit: (name, age) async {
           final code = await _service.createStudentInvite(name: name, age: age);
-          if (sheetContext.mounted) Navigator.of(sheetContext).pop(code);
+          if (formContext.mounted) Navigator.of(formContext).pop(code);
           return code;
         },
       ),
     );
-    if (!mounted || created == null) return;
+    if (created == null) return;
+    if (sheetContext.mounted) Navigator.of(sheetContext).pop();
+    if (!mounted) return;
     await showAppSheet<void>(
       context: context,
       heightFactor: 0.78,
@@ -97,9 +114,9 @@ class _TeacherDashboardScreenState extends State<TeacherDashboardScreen> {
         ),
         actions: [
           IconButton(
-            tooltip: 'خروج',
-            onPressed: _logout,
-            icon: const Icon(Icons.logout, color: AppColors.burgundy),
+            tooltip: 'الإعدادات',
+            onPressed: _openSettings,
+            icon: const Icon(Icons.more_vert, color: AppColors.secondary),
           ),
         ],
       ),
@@ -164,10 +181,6 @@ class _TeacherDashboardScreenState extends State<TeacherDashboardScreen> {
                       const SizedBox(height: 10),
                     ],
                   ],
-                  FilledButton(
-                    onPressed: _addStudent,
-                    child: const Text('إضافة طالب'),
-                  ),
                 ],
               ),
             ),

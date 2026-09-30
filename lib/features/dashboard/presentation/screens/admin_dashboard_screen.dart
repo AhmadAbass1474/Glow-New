@@ -11,6 +11,7 @@ import '../../../../core/utils/logout_helper.dart';
 import '../../../../core/utils/admin_actions_bottom_sheet.dart';
 import '../../../../core/widgets/shimmer_loading.dart';
 import '../../../../core/widgets/offline_aware_image.dart';
+import '../../../organization/presentation/widgets/create_organization_sheet.dart';
 
 class AdminDashboardScreen extends StatefulWidget {
   const AdminDashboardScreen({super.key});
@@ -46,7 +47,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           actions: [
             IconButton(
               icon: const Icon(Icons.more_vert),
-              onPressed: () => showLogoutBottomSheet(context),
+              onPressed: () => showLogoutBottomSheet(
+                context,
+                onCreateOrganization: () => showCreateOrganizationSheet(context),
+              ),
             ),
           ],
         ),

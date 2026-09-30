@@ -7,6 +7,7 @@ import '../../../../core/widgets/app_bottom_sheet.dart';
 import '../../../../core/widgets/shimmer_loading.dart';
 import '../../../dashboard/presentation/screens/parent_reports_screen.dart';
 import '../../data/organization_service.dart';
+import '../widgets/staff_settings_sheet.dart';
 
 class OrganizationDashboardScreen extends StatefulWidget {
   const OrganizationDashboardScreen({super.key});
@@ -47,19 +48,37 @@ class _OrganizationDashboardScreenState extends State<OrganizationDashboardScree
     }
   }
 
-  Future<void> _addTeacher() async {
-    final added = await showAppSheet<bool>(
-      context: context,
+  void _openSettings() {
+    showStaffSettingsSheet(
+      context,
+      settings: [
+        StaffSetting(
+          title: 'إضافة معلم',
+          subtitle: 'اسم وبريد وكلمة مرور. المعلم يدخل من شاشة المنظمة',
+          onTap: (sheetContext) async {
+            final added = await _addTeacher(sheetContext);
+            if (added != true || !sheetContext.mounted) return;
+            Navigator.of(sheetContext).pop();
+            await _load();
+          },
+        ),
+      ],
+      onLogout: _logout,
+    );
+  }
+
+  Future<bool?> _addTeacher(BuildContext sheetContext) {
+    return showAppSheet<bool>(
+      context: sheetContext,
       heightFactor: 0.72,
       avoidKeyboard: true,
-      builder: (sheetContext) => _AddTeacherSheet(
+      builder: (formContext) => _AddTeacherSheet(
         onSubmit: (name, email, password) async {
           await _service.addTeacher(name: name, email: email, password: password);
-          if (sheetContext.mounted) Navigator.of(sheetContext).pop(true);
+          if (formContext.mounted) Navigator.of(formContext).pop(true);
         },
       ),
     );
-    if (added == true) await _load();
   }
 
   Future<void> _logout() async {
@@ -83,9 +102,9 @@ class _OrganizationDashboardScreenState extends State<OrganizationDashboardScree
         ),
         actions: [
           IconButton(
-            tooltip: 'خروج',
-            onPressed: _logout,
-            icon: const Icon(Icons.logout, color: AppColors.burgundy),
+            tooltip: 'الإعدادات',
+            onPressed: _openSettings,
+            icon: const Icon(Icons.more_vert, color: AppColors.secondary),
           ),
         ],
       ),
@@ -118,20 +137,17 @@ class _OrganizationDashboardScreenState extends State<OrganizationDashboardScree
                       _PersonCard(
                         title: teacher.name,
                         subtitle: 'معلم',
-                        onTap: () {
-                          Navigator.of(context).push(
+                        onTap: () async {
+                          await Navigator.of(context).push(
                             MaterialPageRoute<void>(
                               builder: (_) => _TeacherClassScreen(teacher: teacher),
                             ),
                           );
+                          if (mounted) await _load();
                         },
                       ),
                       const SizedBox(height: 10),
                     ],
-                  FilledButton(
-                    onPressed: _addTeacher,
-                    child: const Text('إضافة معلم'),
-                  ),
                 ],
               ),
             ),
@@ -157,6 +173,37 @@ class _TeacherClassScreenState extends State<_TeacherClassScreen> {
   void initState() {
     super.initState();
     _load();
+  }
+
+  void _openSettings() {
+    showStaffSettingsSheet(
+      context,
+      settings: [
+        StaffSetting(
+          title: 'إضافة معلم',
+          subtitle: 'اسم وبريد وكلمة مرور. المعلم يدخل من شاشة المنظمة',
+          onTap: (sheetContext) async {
+            final added = await showAppSheet<bool>(
+              context: sheetContext,
+              heightFactor: 0.72,
+              avoidKeyboard: true,
+              builder: (formContext) => _AddTeacherSheet(
+                onSubmit: (name, email, password) async {
+                  await _service.addTeacher(name: name, email: email, password: password);
+                  if (formContext.mounted) Navigator.of(formContext).pop(true);
+                },
+              ),
+            );
+            if (added == true && sheetContext.mounted) Navigator.of(sheetContext).pop();
+          },
+        ),
+      ],
+      onLogout: () async {
+        await _service.signOut();
+        if (!mounted) return;
+        context.go('/role-selection');
+      },
+    );
   }
 
   Future<void> _load() async {
@@ -190,6 +237,13 @@ class _TeacherClassScreenState extends State<_TeacherClassScreen> {
             fontWeight: FontWeight.w900,
           ),
         ),
+        actions: [
+          IconButton(
+            tooltip: 'الإعدادات',
+            onPressed: _openSettings,
+            icon: const Icon(Icons.more_vert, color: AppColors.secondary),
+          ),
+        ],
       ),
       body: _loading
           ? const ShimmerLoading(type: ShimmerType.list)

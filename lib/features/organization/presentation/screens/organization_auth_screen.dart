@@ -13,15 +13,12 @@ class OrganizationAuthScreen extends StatefulWidget {
 }
 
 class _OrganizationAuthScreenState extends State<OrganizationAuthScreen> {
-  final _name = TextEditingController();
   final _email = TextEditingController();
   final _password = TextEditingController();
-  var _registering = true;
   var _busy = false;
 
   @override
   void dispose() {
-    _name.dispose();
     _email.dispose();
     _password.dispose();
     super.dispose();
@@ -30,25 +27,13 @@ class _OrganizationAuthScreenState extends State<OrganizationAuthScreen> {
   Future<void> _submit() async {
     final email = _email.text.trim();
     final password = _password.text.trim();
-    final name = _name.text.trim();
-    if (email.isEmpty || password.length < 6 || (_registering && name.isEmpty)) {
-      _message('اكتب البيانات. كلمة المرور ستة أحرف على الأقل.');
+    if (email.isEmpty || password.length < 6) {
+      _message('اكتب البريد وكلمة المرور. كلمة المرور ستة أحرف على الأقل.');
       return;
     }
     setState(() => _busy = true);
-    final service = OrganizationService(Supabase.instance.client);
     try {
-      if (_registering) {
-        await service.registerOrganization(
-          name: name,
-          email: email,
-          password: password,
-        );
-        if (!mounted) return;
-        context.go('/organization-dashboard');
-        return;
-      }
-      final role = await service.signIn(email, password);
+      final role = await OrganizationService(Supabase.instance.client).signIn(email, password);
       if (!mounted) return;
       context.go(role == 'teacher' ? '/teacher-dashboard' : '/organization-dashboard');
     } catch (error) {
@@ -70,7 +55,7 @@ class _OrganizationAuthScreenState extends State<OrganizationAuthScreen> {
       backgroundColor: AppColors.background,
       appBar: AppBar(
         title: Text(
-          _registering ? 'تسجيل المنظمة' : 'دخول المنظمة',
+          'دخول المنظمة',
           style: textTheme.titleLarge?.copyWith(
             color: AppColors.secondary,
             fontWeight: FontWeight.w900,
@@ -83,13 +68,12 @@ class _OrganizationAuthScreenState extends State<OrganizationAuthScreen> {
           const SizedBox(height: 12),
           const Icon(Icons.apartment_rounded, size: 64, color: AppColors.secondary),
           const SizedBox(height: 16),
-          if (_registering) ...[
-            TextField(
-              controller: _name,
-              decoration: const InputDecoration(hintText: 'اسم المنظمة'),
-            ),
-            const SizedBox(height: 10),
-          ],
+          Text(
+            'الحساب ينشئه مدير النظام. أدخل البريد وكلمة المرور. المعلم يدخل من هنا أيضاً.',
+            textAlign: TextAlign.center,
+            style: textTheme.bodyMedium?.copyWith(color: AppColors.secondary),
+          ),
+          const SizedBox(height: 16),
           TextField(
             controller: _email,
             keyboardType: TextInputType.emailAddress,
@@ -104,24 +88,7 @@ class _OrganizationAuthScreenState extends State<OrganizationAuthScreen> {
           const SizedBox(height: 16),
           FilledButton(
             onPressed: _busy ? null : _submit,
-            child: Text(_busy
-                ? 'جارٍ الحفظ'
-                : _registering
-                    ? 'إنشاء المنظمة'
-                    : 'دخول'),
-          ),
-          const SizedBox(height: 8),
-          TextButton(
-            onPressed: _busy
-                ? null
-                : () => setState(() => _registering = !_registering),
-            child: Text(
-              _registering ? 'عندي حساب منظمة أو معلم' : 'تسجيل منظمة جديدة',
-              style: textTheme.bodyLarge?.copyWith(
-                color: AppColors.secondary,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
+            child: Text(_busy ? 'جارٍ الدخول' : 'دخول'),
           ),
         ],
       ),
