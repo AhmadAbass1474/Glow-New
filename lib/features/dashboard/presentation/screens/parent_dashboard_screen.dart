@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../auth/presentation/widgets/parent_link_sheets.dart';
+import '../../../auth/presentation/widgets/parent_provision_sheets.dart';
 import '../../../auth/presentation/widgets/parent_settings_sheet.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/widgets/shimmer_loading.dart';
@@ -252,6 +253,10 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
                 ],
                 selectedId: _childId,
                 onLink: (code) => _linkChild(code),
+                onCreateChild: () async {
+                  final created = await showParentCreateChild(context);
+                  if (created && mounted) await _fetchData();
+                },
                 onSelect: (id) async {
                   await sl<AuthLocalDataSource>().cacheParentSelectedChild(id);
                   if (!mounted) return;
@@ -367,6 +372,19 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
             child: FilledButton(
               onPressed: _isLoading ? null : _scanAndLink,
               child: const Text('مسح رمز الابن'),
+            ),
+          ),
+          const SizedBox(height: 10),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton(
+              onPressed: _isLoading
+                  ? null
+                  : () async {
+                      final created = await showParentCreateChild(context);
+                      if (created && mounted) await _fetchData();
+                    },
+              child: const Text('إنشاء حساب لطفلي'),
             ),
           ),
         ],

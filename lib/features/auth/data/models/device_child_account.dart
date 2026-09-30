@@ -9,6 +9,8 @@ class DeviceChildAccount {
   final String slot;
   final bool linkedRemotely;
   final String? parentId;
+  final String? loginEmail;
+  final String? loginPassword;
 
   const DeviceChildAccount({
     required this.id,
@@ -19,6 +21,8 @@ class DeviceChildAccount {
     required this.slot,
     required this.linkedRemotely,
     this.parentId,
+    this.loginEmail,
+    this.loginPassword,
   });
 
   bool get isLocalOnly => id.startsWith('local:');
@@ -43,6 +47,8 @@ class DeviceChildAccount {
     String? slot,
     bool? linkedRemotely,
     String? parentId,
+    String? loginEmail,
+    String? loginPassword,
   }) {
     return DeviceChildAccount(
       id: id ?? this.id,
@@ -53,6 +59,8 @@ class DeviceChildAccount {
       slot: slot ?? this.slot,
       linkedRemotely: linkedRemotely ?? this.linkedRemotely,
       parentId: parentId ?? this.parentId,
+      loginEmail: loginEmail ?? this.loginEmail,
+      loginPassword: loginPassword ?? this.loginPassword,
     );
   }
 
@@ -66,6 +74,8 @@ class DeviceChildAccount {
       'slot': slot,
       'linked_remotely': linkedRemotely,
       'parent_id': parentId,
+      'login_email': loginEmail,
+      'login_password': loginPassword,
     };
   }
 
@@ -79,6 +89,8 @@ class DeviceChildAccount {
       slot: json['slot'] as String? ?? '',
       linkedRemotely: json['linked_remotely'] as bool? ?? false,
       parentId: json['parent_id'] as String?,
+      loginEmail: json['login_email'] as String?,
+      loginPassword: json['login_password'] as String?,
     );
   }
 

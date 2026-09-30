@@ -1,5 +1,8 @@
 import 'dart:math' as math;
+import 'dart:typed_data';
+import 'dart:ui' as ui;
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:qr_flutter/qr_flutter.dart';
@@ -8,9 +11,9 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/widgets/app_bottom_sheet.dart';
 import '../../../../core/widgets/shimmer_loading.dart';
-import '../../../dashboard/presentation/screens/parent_reports_screen.dart';
 import '../../data/organization_service.dart';
 import '../widgets/staff_settings_sheet.dart';
+import 'child_overview_screen.dart';
 
 class TeacherDashboardScreen extends StatefulWidget {
   const TeacherDashboardScreen({super.key});
@@ -145,11 +148,13 @@ class _TeacherDashboardScreenState extends State<TeacherDashboardScreen> {
                         title: student.name,
                         subtitle: '${student.age} سنوات · ${student.stars} نقطة',
                         onTap: () {
-                          context.push(
-                            '/parent/reports',
-                            extra: ParentReportArgs(
-                              childId: student.id,
-                              childName: student.name,
+                          Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                              builder: (_) => ChildOverviewScreen(
+                                childId: student.id,
+                                childName: student.name,
+                                subtitle: '${student.age} سنوات',
+                              ),
                             ),
                           );
                         },
@@ -275,10 +280,78 @@ class _AddStudentSheetState extends State<_AddStudentSheet> {
   }
 }
 
-class _StudentQr extends StatelessWidget {
+class _StudentQr extends StatefulWidget {
   const _StudentQr({required this.code});
 
   final String code;
+
+  @override
+  State<_StudentQr> createState() => _StudentQrState();
+}
+
+class _StudentQrState extends State<_StudentQr> {
+  var _saving = false;
+
+  Future<void> _download() async {
+    if (_saving) return;
+    setState(() => _saving = true);
+    try {
+      final bytes = await _qrPng('${OrganizationService.studentPrefix}${widget.code}');
+      if (bytes.isEmpty) {
+        throw Exception('تعذر تجهيز الصورة');
+      }
+      final saved = await FilePicker.saveFile(
+        fileName: 'student-${widget.code}.png',
+        bytes: bytes,
+        mimeType: 'image/png',
+      );
+      if (!mounted || saved == null) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تم تنزيل رمز الطالب')),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('تعذر تنزيل الرمز: $error')),
+      );
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  Future<Uint8List> _qrPng(String data) async {
+    const qrSize = 900.0;
+    const margin = 96.0;
+    const side = qrSize + margin * 2;
+    final painter = QrPainter(
+      data: data,
+      version: QrVersions.auto,
+      errorCorrectionLevel: QrErrorCorrectLevel.H,
+      gapless: true,
+      eyeStyle: const QrEyeStyle(
+        eyeShape: QrEyeShape.square,
+        color: Color(0xFF000000),
+      ),
+      dataModuleStyle: const QrDataModuleStyle(
+        dataModuleShape: QrDataModuleShape.square,
+        color: Color(0xFF000000),
+      ),
+    );
+    final qr = await painter.toImage(qrSize);
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder);
+    canvas.drawRect(
+      const Rect.fromLTWH(0, 0, side, side),
+      Paint()..color = const Color(0xFFFFFFFF),
+    );
+    canvas.drawImage(qr, const Offset(margin, margin), Paint());
+    final image = await recorder.endRecording().toImage(side.toInt(), side.toInt());
+    final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
+    qr.dispose();
+    image.dispose();
+    if (bytes == null) throw Exception('تعذر تجهيز الصورة');
+    return bytes.buffer.asUint8List(bytes.offsetInBytes, bytes.lengthInBytes);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -297,7 +370,7 @@ class _StudentQr extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Text(
-              'الطالب يفتح التطبيق ويختار طالب ويمسح هذا الرمز من هاتفه.',
+              'امسحه من هاتف الطالب، أو نزّل الصورة وأرسلها له.',
               textAlign: TextAlign.center,
               style: textTheme.bodyMedium?.copyWith(color: AppColors.secondary),
             ),
@@ -308,7 +381,7 @@ class _StudentQr extends StatelessWidget {
                   final side = math.min(constraints.maxWidth, constraints.maxHeight);
                   return Center(
                     child: QrImageView(
-                      data: '${OrganizationService.studentPrefix}$code',
+                      data: '${OrganizationService.studentPrefix}${widget.code}',
                       size: side,
                       backgroundColor: AppColors.surface,
                       errorCorrectionLevel: QrErrorCorrectLevel.L,
@@ -323,6 +396,14 @@ class _StudentQr extends StatelessWidget {
                     ),
                   );
                 },
+              ),
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton(
+                onPressed: _saving ? null : _download,
+                child: Text(_saving ? 'جارٍ التنزيل' : 'تنزيل الرمز'),
               ),
             ),
           ],

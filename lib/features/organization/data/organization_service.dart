@@ -215,10 +215,15 @@ class OrganizationService {
     final rows = await _client.rpc('preview_student_invite', params: {
       'p_code': code,
     });
-    if (rows is! List || rows.isEmpty) {
+    final list = rows is List
+        ? rows
+        : rows is Map
+        ? [rows]
+        : const [];
+    if (list.isEmpty) {
       throw Exception('الرمز غير صالح أو استُخدم من قبل');
     }
-    final row = Map<String, dynamic>.from(rows.first as Map);
+    final row = Map<String, dynamic>.from(list.first as Map);
     return StudentInvitePreview(
       name: row['name'] as String? ?? '',
       age: (row['age'] as num?)?.toInt() ?? 0,

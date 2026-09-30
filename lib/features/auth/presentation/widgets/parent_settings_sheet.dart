@@ -22,6 +22,7 @@ Future<void> showParentSettingsSheet(
   required List<ParentLinkedChild> children,
   required String? selectedId,
   required Future<bool> Function(String code) onLink,
+  required Future<void> Function() onCreateChild,
   required Future<void> Function(String childId) onSelect,
   required Future<void> Function() onLogout,
 }) {
@@ -47,6 +48,10 @@ Future<void> showParentSettingsSheet(
               );
             },
           );
+        },
+        onCreateChild: () async {
+          if (sheetContext.mounted) Navigator.of(sheetContext).pop();
+          await onCreateChild();
         },
         onSwitch: () {
           showAppSheet<void>(
@@ -80,6 +85,7 @@ class _ParentSettings extends StatelessWidget {
     required this.children,
     required this.selectedId,
     required this.onLink,
+    required this.onCreateChild,
     required this.onSwitch,
     required this.onLogout,
   });
@@ -87,6 +93,7 @@ class _ParentSettings extends StatelessWidget {
   final List<ParentLinkedChild> children;
   final String? selectedId;
   final VoidCallback onLink;
+  final VoidCallback onCreateChild;
   final VoidCallback onSwitch;
   final VoidCallback onLogout;
 
@@ -132,6 +139,12 @@ class _ParentSettings extends StatelessWidget {
                   ? 'امسح رمز الابن من هاتفه'
                   : 'أضف ابناً أو ابنة بمسح الرمز',
               onTap: onLink,
+            ),
+            const SizedBox(height: 10),
+            _ParentTile(
+              title: 'إنشاء حساب لطفلي',
+              subtitle: 'أنشئ الحساب وأضفه من دون أن يسجّل الطفل بنفسه',
+              onTap: onCreateChild,
             ),
             const Spacer(),
             FilledButton(

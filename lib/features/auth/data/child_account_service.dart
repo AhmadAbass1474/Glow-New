@@ -135,6 +135,43 @@ class ChildAccountService {
     return profile;
   }
 
+  Future<ChildProfileModel> adoptFromParent({
+    required String email,
+    required String password,
+  }) async {
+    await adoptCached();
+    final response = await _supabase.auth.signInWithPassword(
+      email: email,
+      password: password,
+    );
+    final user = response.user;
+    if (user == null) throw Exception('تعذر فتح الحساب');
+    final row = await _supabase
+        .from('children_profiles')
+        .select()
+        .eq('id', user.id)
+        .maybeSingle();
+    if (row == null) throw Exception('حساب الطفل غير موجود');
+    final account = DeviceChildAccount(
+      id: user.id,
+      name: row['name'] as String? ?? '',
+      age: (row['age'] as num?)?.toInt() ?? 0,
+      avatarUrl: row['avatar_url'] as String? ?? 'fort_frontal.glb',
+      childCode: row['child_code'] as String? ?? '',
+      slot: _newSlot(),
+      linkedRemotely: true,
+      parentId: row['parent_id'] as String?,
+      loginEmail: email,
+      loginPassword: password,
+    );
+    await _writeAccount(account, makeActive: true);
+    await _upsertDeviceRow(account);
+    final profile = account.toProfile();
+    await _local.cacheChild(profile);
+    await _local.forgetUser();
+    return profile;
+  }
+
   Future<void> activate(DeviceChildAccount account) async {
     var current = _find(account.id) ?? account;
     if (await _networkInfo.isConnected) {
@@ -284,7 +321,7 @@ class ChildAccountService {
       final message = error.message.toLowerCase();
       if (!message.contains('already')) rethrow;
     }
-    if (user == null || _supabase.auth.currentSession == null) {
+    if (user == null || _supabase.auth.currentUser?.id != user.id) {
       user = (await _supabase.auth.signInWithPassword(
         email: email,
         password: password,
@@ -355,6 +392,15 @@ class ChildAccountService {
   }
 
   Future<void> _signIn(DeviceChildAccount account) async {
+    final email = account.loginEmail;
+    final password = account.loginPassword;
+    if (email != null &&
+        email.isNotEmpty &&
+        password != null &&
+        password.isNotEmpty) {
+      await _supabase.auth.signInWithPassword(email: email, password: password);
+      return;
+    }
     final deviceId = await _deviceId();
     await _supabase.auth.signInWithPassword(
       email: DeviceIdHelper.emailFor(deviceId, account.slot),
@@ -417,7 +463,14 @@ class ChildAccountService {
       return;
     }
     if (_find(id) != null) {
-      await _replace(id, account);
+      final existing = _find(id);
+      await _replace(
+        id,
+        account.copyWith(
+          loginEmail: existing?.loginEmail,
+          loginPassword: existing?.loginPassword,
+        ),
+      );
       return;
     }
     await _writeAccount(account, makeActive: activeId == null);

@@ -5,9 +5,9 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/widgets/app_bottom_sheet.dart';
 import '../../../../core/widgets/shimmer_loading.dart';
-import '../../../dashboard/presentation/screens/parent_reports_screen.dart';
 import '../../data/organization_service.dart';
 import '../widgets/staff_settings_sheet.dart';
+import 'child_overview_screen.dart';
 
 class OrganizationDashboardScreen extends StatefulWidget {
   const OrganizationDashboardScreen({super.key});
@@ -126,7 +126,7 @@ class _OrganizationDashboardScreenState extends State<OrganizationDashboardScree
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'كل معلم وصفّه. اضغط المعلم لترى طلابه وتقاريرهم.',
+                    'كل معلم وصفّه. اضغط المعلم لترى طلابه وبياناتهم.',
                     style: textTheme.bodyMedium?.copyWith(color: AppColors.secondary),
                   ),
                   const SizedBox(height: 12),
@@ -250,6 +250,8 @@ class _TeacherClassScreenState extends State<_TeacherClassScreen> {
           : ListView(
               padding: const EdgeInsets.all(10),
               children: [
+                _ClassSummary(students: _students),
+                const SizedBox(height: 10),
                 if (_students.isEmpty)
                   const _EmptyCard(text: 'هذا المعلم لم يُضف طلاباً بعد')
                 else
@@ -258,11 +260,13 @@ class _TeacherClassScreenState extends State<_TeacherClassScreen> {
                       title: student.name,
                       subtitle: '${student.age} سنوات · ${student.stars} نقطة',
                       onTap: () {
-                        context.push(
-                          '/parent/reports',
-                          extra: ParentReportArgs(
-                            childId: student.id,
-                            childName: student.name,
+                        Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => ChildOverviewScreen(
+                              childId: student.id,
+                              childName: student.name,
+                              subtitle: widget.teacher.name,
+                            ),
                           ),
                         );
                       },
@@ -417,6 +421,37 @@ class _PersonCard extends StatelessWidget {
               const Icon(Icons.arrow_forward_ios, size: 16, color: AppColors.secondary),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ClassSummary extends StatelessWidget {
+  const _ClassSummary({required this.students});
+
+  final List<OrgStudent> students;
+
+  @override
+  Widget build(BuildContext context) {
+    if (students.isEmpty) return const SizedBox.shrink();
+    final textTheme = Theme.of(context).textTheme;
+    final stars = students.fold<int>(0, (sum, student) => sum + student.stars);
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(AppColors.border_radius),
+        border: Border.all(color: AppColors.inputBorder, width: 1.5),
+      ),
+      child: Text(
+        '${students.length} طلاب · $stars نقطة. اضغط الطالب لترى بياناته كاملة.',
+        textAlign: TextAlign.center,
+        style: textTheme.bodyLarge?.copyWith(
+          color: AppColors.secondary,
+          fontWeight: FontWeight.w700,
         ),
       ),
     );

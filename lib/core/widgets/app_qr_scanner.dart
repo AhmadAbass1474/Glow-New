@@ -9,13 +9,31 @@ import '../theme/app_colors.dart';
 /// Camera preview for a QR sheet. The camera starts after the sheet is open,
 /// using the selector that works on real Android phones.
 class AppQrScanner extends StatefulWidget {
-  const AppQrScanner({super.key, required this.onCode});
+  const AppQrScanner({super.key, required this.onCode, this.handle});
 
   /// Return true when [raw] was accepted and the sheet should close.
   final bool Function(String raw) onCode;
 
+  /// Lets the sheet pause the live camera before reading an uploaded image.
+  final AppQrScanHandle? handle;
+
   @override
   State<AppQrScanner> createState() => _AppQrScannerState();
+}
+
+/// Pauses the live camera so an uploaded photo can be read without freezing it.
+class AppQrScanHandle {
+  _AppQrScannerState? _state;
+
+  Future<void> pause() => _state?.pause() ?? Future<void>.value();
+
+  Future<BarcodeCapture?> analyze(String path) {
+    final state = _state;
+    if (state == null) return Future<BarcodeCapture?>.value();
+    return state.analyze(path);
+  }
+
+  Future<void> resume() => _state?.resume() ?? Future<void>.value();
 }
 
 class _AppQrScannerState extends State<AppQrScanner> {
@@ -25,12 +43,55 @@ class _AppQrScannerState extends State<AppQrScanner> {
   @override
   void initState() {
     super.initState();
+    widget.handle?._state = this;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       Future<void>.delayed(const Duration(milliseconds: 450), () {
         if (!mounted || _handled) return;
         _openCamera();
       });
     });
+  }
+
+  @override
+  void didUpdateWidget(AppQrScanner oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.handle != widget.handle) {
+      if (oldWidget.handle?._state == this) oldWidget.handle?._state = null;
+      widget.handle?._state = this;
+    }
+  }
+
+  Future<void> pause() async {
+    final camera = _camera;
+    if (camera == null) return;
+    try {
+      await camera.stop().timeout(const Duration(seconds: 2));
+    } catch (_) {}
+  }
+
+  Future<BarcodeCapture?> analyze(String path) {
+    final camera = _camera;
+    final future = camera == null
+        ? MobileScannerPlatform.instance.analyzeImage(
+            path,
+            formats: const [BarcodeFormat.qrCode],
+          )
+        : camera.analyzeImage(path, formats: const [BarcodeFormat.qrCode]);
+    return future.timeout(const Duration(seconds: 12));
+  }
+
+  Future<void> resume() async {
+    if (!mounted || _handled) return;
+    final camera = _camera;
+    if (camera == null) {
+      _openCamera();
+      return;
+    }
+    try {
+      await camera.start().timeout(const Duration(seconds: 3));
+    } catch (_) {
+      if (mounted) _openCamera();
+    }
   }
 
   void _openCamera() {
@@ -50,6 +111,7 @@ class _AppQrScannerState extends State<AppQrScanner> {
 
   @override
   void dispose() {
+    if (widget.handle?._state == this) widget.handle?._state = null;
     final camera = _camera;
     if (camera != null) unawaited(camera.dispose());
     super.dispose();

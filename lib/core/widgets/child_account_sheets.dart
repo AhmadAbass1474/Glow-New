@@ -13,6 +13,7 @@ import '../../features/auth/data/models/device_child_account.dart';
 import '../../features/auth/presentation/screens/child_onboarding_screen.dart';
 import '../../features/auth/presentation/widgets/account_transfer_sheets.dart';
 import '../../features/auth/presentation/widgets/parent_link_sheets.dart';
+import '../../features/auth/presentation/widgets/parent_provision_sheets.dart';
 import 'app_bottom_sheet.dart';
 import 'custom_loader.dart';
 
@@ -40,6 +41,15 @@ Future<void> showChildSettingsSheet(
         final code = _currentAccount(listed)?.childCode ?? '';
         if (code.isEmpty) return;
         showParentLinkQr(sheetContext, childCode: code);
+      },
+      onAddFromParent: () {
+        claimParentChildAccount(
+          sheetContext,
+          onReady: () async {
+            if (sheetContext.mounted) Navigator.of(sheetContext).pop();
+            await onAccountChanged();
+          },
+        );
       },
       onTransfer: () {
         final active = _currentAccount(listed);
@@ -149,6 +159,7 @@ class _SettingsSections extends StatelessWidget {
     required this.onCreateAccount,
     required this.onTransfer,
     required this.onLinkParent,
+    required this.onAddFromParent,
     required this.onLogout,
   });
 
@@ -157,6 +168,7 @@ class _SettingsSections extends StatelessWidget {
   final VoidCallback onCreateAccount;
   final VoidCallback onTransfer;
   final VoidCallback onLinkParent;
+  final VoidCallback onAddFromParent;
   final VoidCallback onLogout;
 
   @override
@@ -191,6 +203,12 @@ class _SettingsSections extends StatelessWidget {
             title: 'ربط ولي الأمر',
             subtitle: 'رمز يمسحه ولي الأمر من هاتفه',
             onTap: onLinkParent,
+          ),
+          const SizedBox(height: 10),
+          _MenuTile(
+            title: 'إضافة حساب من ولي الأمر',
+            subtitle: 'امسح رمز حساب أنشأه ولي الأمر، من دون تسجيل جديد',
+            onTap: onAddFromParent,
           ),
         ],
       ),
@@ -229,11 +247,8 @@ class _RoleAccountPickerState extends State<_RoleAccountPicker> {
     } catch (_) {}
     if (!mounted || !widget.sheetContext.mounted) return;
     if (fresh.isEmpty) {
-      final host = widget.host;
-      Navigator.of(widget.sheetContext).pop();
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (host.mounted) showChildOnboardingSheet(host);
-      });
+      if (!mounted || !widget.sheetContext.mounted) return;
+      setState(() => _accounts = const []);
       return;
     }
     setState(() => _accounts = fresh);
@@ -247,11 +262,51 @@ class _RoleAccountPickerState extends State<_RoleAccountPicker> {
         child: CircularProgressIndicator(color: AppColors.primary),
       );
     }
+    if (accounts.isEmpty) {
+      return _SheetBody(
+        title: 'حساب الطفل',
+        subtitle: 'أنشئ حساباً هنا، أو أضف حساباً أنشأه ولي الأمر',
+        body: const SizedBox.shrink(),
+        footer: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            FilledButton(
+              onPressed: () => _closeThenOnboard(widget.host, [widget.sheetContext]),
+              child: const Text('إنشاء حساب'),
+            ),
+            const SizedBox(height: 10),
+            FilledButton(
+              onPressed: () {
+                claimParentChildAccount(
+                  widget.sheetContext,
+                  onReady: () async {
+                    if (widget.sheetContext.mounted) {
+                      Navigator.of(widget.sheetContext).pop();
+                    }
+                    if (widget.host.mounted) widget.host.go('/child-dashboard');
+                  },
+                );
+              },
+              child: const Text('إضافة حساب من ولي الأمر'),
+            ),
+          ],
+        ),
+      );
+    }
     return _AccountList(
       title: 'مين اللي بيلعب؟',
       subtitle: 'حسابات هذا الجهاز',
       accounts: accounts,
       onCreate: () => _closeThenOnboard(widget.host, [widget.sheetContext]),
+      onClaimParent: () {
+        claimParentChildAccount(
+          widget.sheetContext,
+          onReady: () async {
+            if (widget.sheetContext.mounted) Navigator.of(widget.sheetContext).pop();
+            if (widget.host.mounted) widget.host.go('/child-dashboard');
+          },
+        );
+      },
       onSelected: (account) async {
         final opened = await _activate(widget.sheetContext, account);
         if (opened && widget.host.mounted) widget.host.go('/child-dashboard');
@@ -266,6 +321,7 @@ class _AccountList extends StatelessWidget {
     required this.subtitle,
     required this.accounts,
     required this.onCreate,
+    this.onClaimParent,
     required this.onSelected,
   });
 
@@ -273,6 +329,7 @@ class _AccountList extends StatelessWidget {
   final String subtitle;
   final List<DeviceChildAccount> accounts;
   final VoidCallback onCreate;
+  final VoidCallback? onClaimParent;
   final Future<void> Function(DeviceChildAccount account) onSelected;
 
   @override
@@ -294,7 +351,19 @@ class _AccountList extends StatelessWidget {
           ],
         ],
       ),
-      footer: FilledButton(onPressed: onCreate, child: const Text('حساب جديد')),
+      footer: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          FilledButton(onPressed: onCreate, child: const Text('حساب جديد')),
+          if (onClaimParent != null) ...[
+            const SizedBox(height: 10),
+            FilledButton(
+              onPressed: onClaimParent,
+              child: const Text('إضافة حساب من ولي الأمر'),
+            ),
+          ],
+        ],
+      ),
     );
   }
 }
