@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/widgets/child_account_sheets.dart';
+import '../../../organization/presentation/widgets/student_join_sheet.dart';
 import '../widgets/account_transfer_sheets.dart';
 
 class RoleSelectionScreen extends StatelessWidget {
@@ -31,45 +32,65 @@ class RoleSelectionScreen extends StatelessWidget {
         ],
       ),
       body: SafeArea(
-        child: Padding(
+        child: ListView(
           padding: const EdgeInsets.all(10.0),
-          child: Column(
-            children: [
-              const SizedBox(height: 20),
-              _buildRoleCard(
-                context,
-                title: 'طفل (مغامر صغير)',
-                icon: Icons.face_retouching_natural,
-                color: Theme.of(context).colorScheme.tertiary,
-                onTap: () {
-                  HapticFeedback.lightImpact();
-                  showChildRoleSheet(context);
-                },
-              ),
-              const SizedBox(height: 10),
-              _buildRoleCard(
-                context,
-                title: 'ولي أمر (متابع الأبطال)',
-                icon: Icons.family_restroom,
-                color: Theme.of(context).colorScheme.secondary,
-                onTap: () {
-                  HapticFeedback.lightImpact();
-                  context.go('/parent-auth');
-                },
-              ),
-              const SizedBox(height: 10),
-              _buildRoleCard(
-                context,
-                title: 'إدارة النظام (مشرف)',
-                icon: Icons.admin_panel_settings,
-                color: Theme.of(context).colorScheme.primary,
-                onTap: () {
-                  HapticFeedback.lightImpact();
-                  context.go('/admin-login');
-                },
-              ),
-            ],
-          ),
+          children: [
+            const SizedBox(height: 20),
+            _buildRoleCard(
+              context,
+              title: 'طفل (مغامر صغير)',
+              icon: Icons.face_retouching_natural,
+              color: Theme.of(context).colorScheme.tertiary,
+              onTap: () {
+                HapticFeedback.lightImpact();
+                showChildRoleSheet(context);
+              },
+            ),
+            const SizedBox(height: 10),
+            _buildRoleCard(
+              context,
+              title: 'ولي أمر (متابع الأبطال)',
+              icon: Icons.family_restroom,
+              color: Theme.of(context).colorScheme.secondary,
+              onTap: () {
+                HapticFeedback.lightImpact();
+                context.go('/parent-auth');
+              },
+            ),
+            const SizedBox(height: 10),
+            _buildRoleCard(
+              context,
+              title: 'منظمة',
+              icon: Icons.apartment_rounded,
+              color: Theme.of(context).colorScheme.secondary,
+              onTap: () {
+                HapticFeedback.lightImpact();
+                context.go('/organization-auth');
+              },
+            ),
+            const SizedBox(height: 10),
+            _buildRoleCard(
+              context,
+              title: 'طالب',
+              icon: Icons.school_rounded,
+              color: Theme.of(context).colorScheme.tertiary,
+              onTap: () {
+                HapticFeedback.lightImpact();
+                startStudentJoin(context);
+              },
+            ),
+            const SizedBox(height: 10),
+            _buildRoleCard(
+              context,
+              title: 'إدارة النظام (مشرف)',
+              icon: Icons.admin_panel_settings,
+              color: Theme.of(context).colorScheme.primary,
+              onTap: () {
+                HapticFeedback.lightImpact();
+                context.go('/admin-login');
+              },
+            ),
+          ],
         ),
       ),
     );

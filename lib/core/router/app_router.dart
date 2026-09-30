@@ -9,6 +9,9 @@ import '../../features/auth/presentation/screens/parent_auth_screen.dart';
 import '../../features/auth/presentation/screens/admin_login_screen.dart';
 import '../../features/dashboard/presentation/screens/child_dashboard_screen.dart';
 import '../../features/dashboard/presentation/screens/parent_dashboard_screen.dart';
+import '../../features/organization/presentation/screens/organization_auth_screen.dart';
+import '../../features/organization/presentation/screens/organization_dashboard_screen.dart';
+import '../../features/organization/presentation/screens/teacher_dashboard_screen.dart';
 import '../../features/dashboard/presentation/screens/parent_reports_screen.dart';
 import '../../features/dashboard/presentation/screens/admin_dashboard_screen.dart';
 import '../../features/content/presentation/screens/add_world_screen.dart';
@@ -142,6 +145,18 @@ class AppRouter {
       GoRoute(
         path: '/parent-auth',
         builder: (context, state) => const ParentAuthScreen(),
+      ),
+      GoRoute(
+        path: '/organization-auth',
+        builder: (context, state) => const OrganizationAuthScreen(),
+      ),
+      GoRoute(
+        path: '/organization-dashboard',
+        builder: (context, state) => const OrganizationDashboardScreen(),
+      ),
+      GoRoute(
+        path: '/teacher-dashboard',
+        builder: (context, state) => const TeacherDashboardScreen(),
       ),
       GoRoute(
         path: '/parent-dashboard',

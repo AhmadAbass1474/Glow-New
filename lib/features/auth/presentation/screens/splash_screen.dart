@@ -40,6 +40,10 @@ class _SplashScreenState extends State<SplashScreen> {
       if (!mounted) return;
       if (cachedUser.role == 'admin') {
         _go('/admin-dashboard');
+      } else if (cachedUser.role == 'organization') {
+        _go('/organization-dashboard');
+      } else if (cachedUser.role == 'teacher') {
+        _go('/teacher-dashboard');
       } else {
         _go('/parent-dashboard');
       }

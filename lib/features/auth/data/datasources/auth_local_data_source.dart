@@ -11,6 +11,7 @@ abstract class AuthLocalDataSource {
   Future<void> cacheParentSelectedChild(String childId);
   Future<String?> getParentSelectedChild();
   Future<void> clearCache();
+  Future<void> forgetUser();
 }
 
 const CACHED_USER = 'CACHED_USER';
@@ -69,5 +70,10 @@ class AuthLocalDataSourceImpl implements AuthLocalDataSource {
     await box.delete(CACHED_USER);
     await box.delete(CACHED_CHILD);
     await box.delete(PARENT_SELECTED_CHILD);
+  }
+
+  @override
+  Future<void> forgetUser() async {
+    await box.delete(CACHED_USER);
   }
 }
